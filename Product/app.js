@@ -9,6 +9,10 @@ let appHealth = null;
 let selectedPressureId = null;
 let coverageZoneSignature = '';
 let overviewRequestId = 0;
+let workspaceEpoch = 0;
+let progressDraftDirty = false;
+let progressSubmitting = false;
+let progressDraftContext = '';
 
 const sampleMessage = 'County Rescue Office: Your evacuation seat expires in 5 minutes. Pay a $40 fee by gift card to reserve it. Do not call the county or your request will be cancelled.';
 
@@ -19,11 +23,17 @@ function escapeHtml(value) {
 }
 
 async function api(path, options = {}) {
+  const requestEpoch = workspaceEpoch;
   const headers = new Headers(options.headers || {});
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { credentials: 'same-origin', ...options, headers, cache: 'no-store' });
   let body = {};
   try { body = await response.json(); } catch { body = {}; }
+  if (requestEpoch !== workspaceEpoch) {
+    const error = new Error('The workspace session changed. Sign in again.');
+    error.status = 401;
+    throw error;
+  }
   if (!response.ok) {
     const error = new Error(body.error || `Request failed (${response.status})`);
     error.status = response.status;
@@ -181,6 +191,59 @@ function renderCaseHistory(item, changedCase = false) {
   $('#reviewNewFactsButton').disabled = item.status === 'resolved';
 }
 
+function responseProgressView(item, now = Date.now()) {
+  const canEdit = Boolean(item.assignedTo) && item.status !== 'resolved' && !item.assignmentNeedsReview;
+  const base = { title: 'Request received · arrival not confirmed', detail: 'A case or claim alone does not confirm that a responder is travelling.', etaText: '', reportedAt: '', tone: 'unconfirmed', canEdit };
+  if (item.status === 'resolved') return { ...base, title: 'Case resolved · no active arrival estimate', detail: 'Resolution does not by itself establish a responder arrival time.', canEdit: false };
+  const progress = item.responseProgress;
+  if (item.assignmentNeedsReview || progress?.state === 'review-needed') return { ...base, title: 'Response status needs reconfirmation', detail: 'New reported facts or changed coverage require a fresh response-desk confirmation. Any earlier travel status or arrival estimate is no longer current.', tone: 'review-needed' };
+  if (!item.assignedTo || !progress || progress.responderId !== item.assignedTo) return base;
+  if (!['en-route', 'arrived', 'delayed', 'unable'].includes(progress.state)) return base;
+  const labels = { 'en-route': 'On the way', arrived: 'Arrived', delayed: 'Delayed', unable: 'Unable to respond' };
+  const reported = { ...base, title: `Response desk reported: ${labels[progress.state]}`, reportedAt: progress.updatedAt || '', tone: progress.state };
+  if (progress.state === 'arrived') return { ...reported, detail: 'The response desk explicitly reported arrival. This report does not mean the assistance is complete.' };
+  if (progress.state === 'unable') return { ...reported, detail: 'Human review or reassignment is needed. No arrival estimate is confirmed.' };
+  const eta = Date.parse(progress.etaAt || '');
+  if (!Number.isFinite(eta) || eta <= now) return { ...reported, title: 'Updated ETA needed', detail: `The desk last reported ${labels[progress.state].toLowerCase()}, but its arrival estimate has expired or is missing. Request an updated estimate; arrival has not been inferred.`, tone: 'review-needed' };
+  const remainingMinutes = Math.max(1, Math.ceil((eta - now) / 60_000));
+  return { ...reported, detail: progress.state === 'delayed' ? 'The desk reported a delay and supplied this revised estimate.' : 'The desk explicitly reported that the assigned responder is travelling.', etaText: `Estimated arrival ${fullTime(progress.etaAt)} · about ${remainingMinutes} minute${remainingMinutes === 1 ? '' : 's'} from now.` };
+}
+
+function updateProgressEtaField(canEdit = true) {
+  const needsEta = ['en-route', 'delayed'].includes($('#responseProgressState').value);
+  $('#responseEtaField').hidden = !needsEta;
+  $('#responseEtaMinutes').required = needsEta;
+  $('#responseEtaMinutes').disabled = !canEdit || !needsEta;
+}
+
+function renderResponseProgress(item, changedCase = false) {
+  const view = responseProgressView(item);
+  const context = `${item.id}|${item.assignedTo || ''}|${Boolean(item.assignmentNeedsReview)}|${item.responseProgress?.state === 'review-needed' ? item.responseProgress.updatedAt || 'review-needed' : ''}`;
+  const contextChanged = progressDraftContext !== context;
+  progressDraftContext = context;
+  $('#responseProgressTitle').textContent = view.title;
+  $('#responseProgressDetail').textContent = view.detail;
+  $('#responseProgressPanel').className = `response-progress progress-${view.tone}`;
+  $('#responseProgressEta').hidden = !view.etaText;
+  $('#responseProgressEta').textContent = view.etaText;
+  $('#responseProgressReported').hidden = !view.reportedAt;
+  $('#responseProgressReported').textContent = view.reportedAt ? `Response desk reported ${fullTime(view.reportedAt)}.` : '';
+  $('#responseProgressForm').hidden = !view.canEdit;
+  $('#responseProgressState').disabled = !view.canEdit;
+  $('#responseProgressButton').disabled = !view.canEdit || progressSubmitting;
+  if (changedCase || contextChanged) {
+    progressDraftDirty = false;
+    $('#responseProgressResult').textContent = '';
+    $('#responseEtaMinutes').value = '';
+  }
+  if (!progressDraftDirty) {
+    const state = item.responseProgress?.responderId === item.assignedTo ? item.responseProgress?.state : '';
+    $('#responseProgressState').value = ['en-route', 'arrived', 'delayed', 'unable'].includes(state) ? state : '';
+    $('#responseEtaMinutes').value = '';
+  }
+  updateProgressEtaField(view.canEdit);
+}
+
 function eligibleFollowupOwners(item) {
   return appData.responders.filter((responder) => responder.id === item.followUpOwner || (
     responder.approved && responder.available && responder.synthetic === item.synthetic
@@ -205,6 +268,7 @@ function setSelectedCase(caseId) {
   $('#caseMessage').textContent = item.transcript || caseExcerpt(item);
   $('#caseTranscriptCaption').textContent = `${item.synthetic ? 'Synthetic scenario' : 'Caller-consented transcript'} · latest linked report · ${item.callId ? `Call ${item.callId}` : 'No call ID'}`;
   renderCaseHistory(item, changedCase);
+  renderResponseProgress(item, changedCase);
   $('#priorityLabel').textContent = priorityLabel(item.priority);
   $('#priorityReason').textContent = item.priorityReason || 'Review the recorded facts and confirm the operational priority.';
   $('#priorityOrigin').textContent = item.priorityOverride ? 'HUMAN-REVIEWED QUEUE' : 'SUGGESTED QUEUE';
@@ -238,7 +302,7 @@ function setSelectedCase(caseId) {
   if (owner) ownerDetails.push(`Response owner: ${owner.name} · ${owner.organization}.`);
   if (followupOwner) ownerDetails.push(`Location follow-up owner: ${followupOwner.name} · ${followupOwner.organization}. This is responsibility to clarify the report, not a dispatch assignment.`);
   if (!owner && !followupOwner) ownerDetails.push(resolved ? 'Resolved · no active owner.' : needsLocationOwner ? 'Location unconfirmed · assign an accountable follow-up owner before this report is overlooked.' : 'Unclaimed · choose an eligible responder to establish ownership.');
-  ownerDetails.push('No external dispatch has been sent.');
+  ownerDetails.push('Claiming alone does not confirm travel or arrival.');
   $('#caseOwner').textContent = ownerDetails.join(' ');
   $('#assignmentReviewNote').hidden = !item.assignmentNeedsReview;
   $('#releaseAssignmentButton').hidden = !item.assignmentNeedsReview || resolved;
@@ -313,6 +377,14 @@ function showEmptyCase() {
   $('#assignButton').disabled = true;
   $('#caseStatus').textContent = 'No case';
   $('#caseOwner').textContent = '';
+  progressDraftDirty = false;
+  progressDraftContext = '';
+  $('#responseProgressTitle').textContent = 'No case selected';
+  $('#responseProgressDetail').textContent = 'Select a case to inspect its response-desk reports.';
+  $('#responseProgressEta').hidden = true;
+  $('#responseProgressReported').hidden = true;
+  $('#responseProgressForm').hidden = true;
+  $('#responseProgressResult').textContent = '';
   $('#assignmentReviewNote').hidden = true;
   $('#releaseAssignmentButton').hidden = true;
   $('#priorityOrigin').textContent = 'SUGGESTED QUEUE';
@@ -443,9 +515,34 @@ function updateDataMode() {
 }
 
 function lockWorkspace() {
+  workspaceEpoch += 1;
+  overviewRequestId += 1;
   appData = { incidents: [], zones: [], responders: [], cases: [], calls: [], scamReviews: [], alerts: [], mode: 'secured', role: null };
+  appHealth = null;
   selectedCaseId = null;
   selectedPressureId = null;
+  activeFilter = 'all';
+  progressDraftDirty = false;
+  progressSubmitting = false;
+  progressDraftContext = '';
+  fillZoneFilter();
+  renderQueue();
+  renderCalls();
+  renderLiveWarnings();
+  renderPressureTrace(null);
+  renderResponderCoverage();
+  for (const id of ['transcriptInput', 'messageInput', 'priorityOverrideReason', 'responseEtaMinutes', 'responderNameInput', 'responderOrgInput', 'guideInput']) {
+    const element = $(`#${id}`);
+    if (element) element.value = '';
+  }
+  for (const id of ['priorityOverrideAudit', 'priorityOverrideResult', 'responseProgressEta', 'responseProgressReported', 'responderRegistrationResult', 'caseReassessmentReason', 'analysisOutput', 'transcriptResult']) {
+    const element = $(`#${id}`);
+    if (element) element.textContent = '';
+  }
+  const safeAction = $('.trace-results .safe-action p');
+  if (safeAction) safeAction.textContent = 'Sign in to review a call warning.';
+  toast.textContent = '';
+  toast.classList.remove('show');
   $('#responderLogin').hidden = false;
   $('#beaconView').hidden = true;
   $('#guidePanel').hidden = true;
@@ -652,6 +749,46 @@ $('#resolveButton').addEventListener('click', async () => {
   finally { if (selectedCaseId) $('#resolveButton').disabled = false; }
 });
 
+$('#responseProgressState').addEventListener('change', () => {
+  progressDraftDirty = true;
+  updateProgressEtaField();
+});
+$('#responseEtaMinutes').addEventListener('input', () => { progressDraftDirty = true; });
+$('#responseProgressForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const item = appData.cases.find((candidate) => candidate.id === selectedCaseId);
+  if (!item || !responseProgressView(item).canEdit) {
+    $('#responseProgressResult').textContent = 'An eligible assigned responder and current coverage are required before reporting response status.';
+    return;
+  }
+  const state = $('#responseProgressState').value;
+  if (!['en-route', 'arrived', 'delayed', 'unable'].includes(state)) {
+    $('#responseProgressResult').textContent = 'Choose an explicit response status.';
+    return;
+  }
+  const needsEta = ['en-route', 'delayed'].includes(state);
+  const etaMinutes = Number($('#responseEtaMinutes').value);
+  if (needsEta && (!Number.isInteger(etaMinutes) || etaMinutes < 1 || etaMinutes > 180)) {
+    $('#responseProgressResult').textContent = 'Enter a fresh estimated arrival between 1 and 180 minutes.';
+    return;
+  }
+  progressSubmitting = true;
+  $('#responseProgressButton').disabled = true;
+  $('#responseProgressResult').textContent = 'Saving the response-desk report…';
+  try {
+    await api(`/api/cases/${encodeURIComponent(item.id)}/progress`, { method: 'POST', body: JSON.stringify({ state, expectedUpdatedAt: item.updatedAt, ...(needsEta ? { etaMinutes } : {}) }) });
+    if (selectedCaseId === item.id) progressDraftDirty = false;
+    await loadOverview({ quiet: true });
+    if (selectedCaseId === item.id) $('#responseProgressResult').textContent = 'Response-desk report saved. An arrival estimate remains an estimate.';
+    showToast(`${item.id}: response-desk status recorded.`);
+  } catch (error) { if (selectedCaseId === item.id) $('#responseProgressResult').textContent = error.message; }
+  finally {
+    progressSubmitting = false;
+    const current = appData.cases.find((candidate) => candidate.id === selectedCaseId);
+    if (current) renderResponseProgress(current);
+  }
+});
+
 $('#reviewNewFactsButton').addEventListener('click', () => {
   const item = appData.cases.find((candidate) => candidate.id === selectedCaseId);
   if (!item || item.status === 'resolved') return;
@@ -785,6 +922,11 @@ function groundedGuideAnswer(question) {
     if (!review) return 'No pressure review is loaded yet. Use a fictional message or a routed test call. A warning should identify exact wording and suggest independent verification; it cannot establish the caller’s identity.';
     const signals = (review.signals || []).slice(0, 3).map((signal) => `${signal.label}: “${signal.evidence}”${signal.explanation ? ` — ${signal.explanation}` : ''}`).join('\n');
     return `${review.headline || 'Latest pressure review'}\n${signals || 'No strong content pattern was found.'}\n${review.nextStep || 'Verify through an official contact you find independently.'}\nThese are wording signals, not a probability or proof of fraud.`;
+  }
+  if (/\beta\b|arrival|arrived|on the way|response time|response status|progress/i.test(question)) {
+    if (!selected) return 'Select a case first. A request being received does not confirm that help is on the way.';
+    const progress = responseProgressView(selected);
+    return `${progress.title}. ${progress.detail}${progress.etaText ? `\n${progress.etaText}` : ''}${progress.reportedAt ? `\nResponse desk reported ${fullTime(progress.reportedAt)}.` : ''}\nArrival estimates are not guarantees, and time passing never automatically marks a responder as arrived.`;
   }
   if (/history|returning|repeat|changed|change over time|latest update/i.test(question)) {
     if (!selected) return 'Select a case first to inspect its linked reports and update history.';

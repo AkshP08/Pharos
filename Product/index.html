@@ -136,6 +136,21 @@
             <p class="case-owner" id="caseOwner">No responder owns this case yet.</p>
             <p class="assignment-review-note" id="assignmentReviewNote" role="status" hidden></p>
             <button type="button" class="button button-quiet release-assignment-button" id="releaseAssignmentButton" hidden>Release for reassignment</button>
+            <section class="response-progress" id="responseProgressPanel" aria-labelledby="responseProgressTitle">
+              <div class="panel-kicker">RESPONSE STATUS · REPORTED BY THE DESK</div>
+              <h3 id="responseProgressTitle">Request received · arrival not confirmed</h3>
+              <p id="responseProgressDetail">A case or claim alone does not confirm that a responder is travelling.</p>
+              <p class="response-progress-eta" id="responseProgressEta" hidden></p>
+              <p class="response-progress-reported" id="responseProgressReported" hidden></p>
+              <form id="responseProgressForm" hidden>
+                <label for="responseProgressState">Report response status</label>
+                <select id="responseProgressState" required><option value="">Choose an explicit status</option><option value="en-route">On the way</option><option value="arrived">Arrived</option><option value="delayed">Delayed</option><option value="unable">Unable to respond</option></select>
+                <div id="responseEtaField" hidden><label for="responseEtaMinutes">Updated estimated arrival, in minutes</label><input id="responseEtaMinutes" type="number" min="1" max="180" step="1" inputmode="numeric" autocomplete="off" placeholder="Enter 1–180" /><small>A fresh estimate is required for On the way or Delayed.</small></div>
+                <button type="submit" class="button button-quiet" id="responseProgressButton">Save desk-reported status</button>
+              </form>
+              <p class="case-action-result" id="responseProgressResult" role="status" aria-live="polite"></p>
+              <p class="response-progress-note">Arrival times are estimates, not guarantees. Only an explicit response-desk report can set On the way or Arrived; time passing does not confirm arrival.</p>
+            </section>
             <details class="priority-review" id="priorityReview">
               <summary>Review queue priority</summary>
               <form id="priorityOverrideForm">

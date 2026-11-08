@@ -45,7 +45,7 @@ function showAlert(alert) {
   $('#waitingCard').hidden = true;
   $('#warningTitle').textContent = alert.headline || 'Pause and verify';
   $('#warningConfidence').textContent = alert.confidence || 'A wording pattern deserves independent verification; this is not a fraud probability.';
-  const sourceLabel = alert.analysisSource === 'context-model' ? 'Contextual transcript review' : 'Call wording review';
+  const sourceLabel = alert.analysisSource === 'caller-id-history' ? 'Prior caller-ID reports · identity unverified' : alert.analysisSource === 'context-model' ? 'Contextual transcript review' : 'Call wording review';
   $('#warningTime').textContent = `${sourceLabel} · ${new Date(alert.createdAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
   $('#evidence').replaceChildren();
   for (const signal of alert.signals || []) {

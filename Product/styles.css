@@ -607,3 +607,20 @@ button:disabled { cursor: default; opacity: .55; transform: none; box-shadow: no
 @media (max-width: 480px) {
   .case-update-summary, .history-entry-head { align-items: flex-start; flex-direction: column; }
 }
+
+/* Only an explicit desk report confirms response progress; ETA is never inferred. */
+.response-progress { margin-top: 12px; padding: 12px; border: 1px solid #dce6e0; border-radius: 8px; background: #f7faf8; }
+.response-progress h3 { margin: 6px 0 0; color: #4f6b59; font: 700 12px/1.4 'Manrope', sans-serif; }
+.response-progress > p { margin: 6px 0 0; color: #7a8d7e; font-size: 8px; line-height: 1.6; }
+.response-progress.progress-en-route, .response-progress.progress-arrived { border-color: #bddbc9; background: #f1f9f3; }
+.response-progress.progress-delayed, .response-progress.progress-unable, .response-progress.progress-review-needed { border-color: #e4cdaa; background: #fff9ee; }
+.response-progress.progress-review-needed h3, .response-progress.progress-unable h3, .response-progress.progress-delayed h3 { color: #9b713f; }
+.response-progress > .response-progress-eta { padding: 7px 8px; border: 1px solid #d6e7db; border-radius: 5px; background: #fff; color: #4c7859; font-weight: 700; }
+.response-progress > .response-progress-reported { color: #9aaa9b; font-size: 7px; }
+.response-progress form { display: grid; gap: 6px; margin-top: 11px; padding-top: 10px; border-top: 1px solid #e0e9df; }
+.response-progress label { display: block; color: #627b68; font-size: 8px; font-weight: 700; }
+.response-progress select, .response-progress input { width: 100%; min-height: 31px; padding: 7px 9px; border: 1px solid #d4e1d5; border-radius: 6px; background: #fff; color: #4a6952; font: 9px/1.5 'DM Sans', sans-serif; }
+.response-progress #responseEtaField > label { margin-bottom: 5px; }
+.response-progress small { display: block; margin-top: 4px; color: #93a494; font-size: 7px; }
+.response-progress form > button { justify-self: start; min-height: 30px; font-size: 8px; }
+.response-progress > .response-progress-note { margin-top: 9px; padding-top: 8px; border-top: 1px solid #e0e9df; color: #9aab9b; font-size: 7px; }

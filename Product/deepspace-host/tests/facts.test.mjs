@@ -237,3 +237,37 @@ test('hypothetical relocation is ignored and explicitly unknown new location cle
   assert.equal(facts(caller('We are in Zone 1.'), caller('We are now at an unknown location.')).locationText, '');
   assert.equal(facts(caller('We are in Zone 1.'), caller('We are in Zone 2.')).locationText, '');
 });
+
+test('a generic later reference to the same library preserves the specific hosted-demo location', () => {
+  const initial = 'We are safe. We need shelter near Northbank Library in zone two. There are three people';
+  const initialFacts = facts(caller(initial));
+  const updated = facts(caller(initial), caller('We have no injuries. We can wait safely at the library.'));
+  assert.equal(updated.locationText, initialFacts.locationText);
+  assert.match(updated.locationText, /Northbank Library in zone two/);
+  assert.equal(updated.immediateDanger, 'no');
+  assert.equal(updated.peopleCount, 3);
+  assert.deepEqual(updated.needs, ['shelter']);
+});
+
+test('explicit moves to another library or a different named library replace the old location', () => {
+  const initial = caller('We are near Northbank Library in Zone 2.');
+  const another = facts(initial, caller('We have moved to another library.'));
+  assert.equal(another.locationText, 'another library');
+  assert.ok(!another.locationText.includes('Northbank'));
+  const named = facts(initial, caller('We are now at Riverbend Library in Zone 3.'));
+  assert.match(named.locationText, /Riverbend Library in Zone 3/);
+  assert.ok(!named.locationText.includes('Northbank'));
+});
+
+test('a prompted answer or explicit correction can replace a detailed place with a generic place', () => {
+  const initial = caller('We are near Northbank Library in Zone 2.');
+  assert.equal(facts(initial, agent('Where are you now?'), caller('At the library.')).locationText, 'At the library.');
+  assert.equal(facts(initial, caller('Correction: we are at the library.')).locationText, 'at the library');
+});
+
+test('a relative library reference does not conceal a subsequent conflicting independent zone', () => {
+  const result = facts(caller('We are near Northbank Library in Zone 2.'), caller('We can wait at the library.'), caller('We are in Zone 3.'));
+  assert.equal(result.locationText, '');
+  const differentPlace = facts(caller('We are near Northbank Library in Zone 2.'), caller('We are near Riverbend Footbridge in Zone 3.'));
+  assert.equal(differentPlace.locationText, '', 'Independent conflicting locations still require clarification');
+});

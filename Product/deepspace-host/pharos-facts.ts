@@ -145,8 +145,9 @@ function locationCandidate(text: string, prompted: boolean): { value: string; re
   const zip = value.match(/\b(?:zip(?: code)? (?:is )?)?(\d{5}(?:-\d{4})?)\b/i)?.[1]
   const landmarkMatch = value.match(/\b(?:near|at|by|beside|outside)\s+(?:the\s+)?([^.!?;]{3,90})/i)?.[0]
   const landmark = landmarkMatch && !/^(?:near|at|by|beside|outside)\s+(?:an?\s+)?unknown(?: (?:location|place|area))?[.! ]*$/i.test(landmarkMatch) ? landmarkMatch : undefined
+  const relocationDestination = relocation ? value.match(/\b(?:moved|relocated|evacuated) to\s+([^.!?;]{3,90})/i)?.[1]?.trim() : undefined
   const unknown = /\b(?:don't know|do not know|not sure|unsure|unknown)\b/i.test(value)
-  let plausible = coordinate || address || landmark || zone || zip
+  let plausible = coordinate || address || landmark || zone || zip || (relocationDestination && !unknown ? relocationDestination : undefined)
   if (plausible) {
     const prefix = value.slice(0, value.indexOf(plausible)).split(/[.!?;,]|\bbut\b|\bhowever\b/i).at(-1) || ''
     if (/\b(?:if|unless|in case|suppose|imagine)\b/i.test(prefix)) return { value: '', reported: false, corrected: false }
@@ -165,6 +166,14 @@ function locationCandidate(text: string, prompted: boolean): { value: string; re
 function locationIdentity(value: string): string | null {
   const match = normalize(value).toLowerCase().match(/\b(zone|district)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)\b/)
   return match ? `${match[1]} ${numberWords[match[2]] ?? match[2]}` : null
+}
+
+function refersToPreviousPlace(previous: string, next: string): boolean {
+  // “At the library” can refer back to “Northbank Library, Zone 2”; it is
+  // not evidence that the named library and zone stopped being current.
+  // Different/named places and “another library” deliberately do not match.
+  const reference = normalize(next).toLowerCase().match(/^(?:at|near|by|beside|outside)\s+(?:(?:the|this|that|same|our|my)\s+)?(library|shelter|hospital|school|footbridge|bridge|water tower|building|home|house|church|station|parking lot)[.,]?$/)
+  return Boolean(reference && new RegExp(`\\b${reference[1]}\\b`, 'i').test(previous))
 }
 
 function countValue(token: string): number {
@@ -266,7 +275,7 @@ export function deriveCallFacts(turns: readonly FactsTurn[]): CallFacts {
         } else if (conflict) {
           locationText = ''
           locationAmbiguous = true
-        } else if (!locationAmbiguous && location.value) locationText = location.value
+        } else if (!locationAmbiguous && location.value && !refersToPreviousPlace(locationText, location.value)) locationText = location.value
       }
   
       const people = peopleReport(fragment, prompt === 'people')

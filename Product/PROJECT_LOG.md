@@ -250,3 +250,33 @@ Append a dated note after each meaningful implementation session. Include what c
 - Visually reviewed the live Flare call-first page, opened the sample call, and checked the consent line, short questions, read-back, caller confirmation, backup form label, and “hotline not connected yet” status. Opened the Pharos Guide and saw the new tiny bobbing/blinking Pharaoh with animated lantern light.
 - Screenshots of the call-first flow and animated guide were displayed inline during this progress update. The browser screenshot tool does not return a repository file path; they are not archived in `Product/screenshots/`. The setup screenshot of Photon’s channel picker remains the saved screenshot.
 - The visible demo still performs no real call, does not request microphone permission, and transmits no data. Photon line provisioning, LiveKit configuration, and a consenting call test remain future setup tasks.
+
+## 2026-11-07 7:23 PM CST — Reframed the product as responder web + resident phone line
+
+### User correction and architecture review
+- The user challenged the assumption that a resident should browse a website during a disaster. Product direction under review: keep the website for responders; residents interact through a telephone hotline.
+- New scenario under review: (1) a resident receives a scam call during a disaster; (2) a resident calls Pharos to request real help; (3) responder queues are scoped by service areas and ordered by urgency.
+- A key feasibility gap: a call made to someone's ordinary mobile number does not automatically pass through Photon. Photon 2.0 voice is SIP calling on a configured Photon route/number. A browser-based Pharos site cannot geofence a person and transparently reroute their native cellular calls. Doing that would require a phone OS/carrier integration or deliberate call-forwarding/consent flow. The current public challenge description offers the T-Mobile synthetic message set, scam taxonomy, and baseline classifier; it does not promise carrier call-audio access.
+- Therefore the distinction to preserve is: **Pharos hotline call** can be routed to Photon SIP → LiveKit/STT and analyzed; **unrelated scam call to the resident's native phone** is invisible to Pharos unless the user/carrier routes or shares its content. Do not claim automatic detection or hang-up on that native call in this prototype.
+
+### Proposed responder and triage model to validate
+- Beacon should show a verified responder only the incidents in their assigned operating area and capabilities. Responder profiles should include an approved organization, service geography (for prototype, ZIP/zone; later a polygon), response capabilities, current availability, and capacity.
+- First filter requests by the incident geography and responder eligibility; within each area's queue, order by transparent operational urgency, then report time. Overlapping areas need one accountable lead/claim owner and a mutual-aid escalation path; unknown locations stay in a visible follow-up queue, not dropped or ranked as low.
+- Use a voice agent to collect a small, consistent set of self-reported facts; let explicit, auditable rules suggest an operational priority; keep human responders responsible for confirming/reordering/dispatching. Do not ask callers to numerically rank their own urgency or make the model diagnose them.
+- Scam analysis should be a parallel safety feature: analyze consented call transcript or provided synthetic message content, quote the exact pressure tactics, explain uncertainty, and give a spoken next step. It must never block an emergency request. Direct protection of an active native mobile call is a future carrier/OS integration, not assumed MVP functionality.
+
+### Open product decisions before changing the prototype
+1. Is the scam MVP a Pharos verification path (caller describes/reads a suspicious request to the hotline, gets a spoken safety check) plus T-Mobile's synthetic evaluation set, while native-call screening is explicitly future work? This is the feasible recommendation.
+2. Is Pharos one shared public hotline that people must call, or are we pursuing opt-in personal call forwarding / a carrier partnership? Who would distribute the hotline number in an active disaster?
+3. What trusted source defines active incident boundaries, and are warnings to residents a required MVP feature or a later extension? Outbound warning calls need opt-in recipients and a reliable official alert source.
+4. Are responders one incident-command organization with several area queues, or independent agencies? Who verifies their identity, service area, capabilities, availability, and case ownership?
+5. Which consistent intake facts and priority tiers are acceptable, and who approves the rulebook? Unknown answers should remain follow-up work, not be interpreted as low risk.
+6. Have the team's T-Mobile synthetic scenarios/taxonomy/baseline and Photon Voice SIP/LiveKit instructions been obtained from the sponsor resources? Neither is in the current workspace as a working integration/data fixture; Photon has no configured call route yet.
+7. What disclosure/consent and retention behavior should the voice agent use? Recommendation: disclose transcription, do not retain raw audio by default, save only the minimal structured report and relevant quoted evidence, and give an unclear-answer/human or keypad fallback.
+
+### Sources checked
+- HackUTD official [Safe Signal challenge](https://zeroday.hackutd.co/) says scam detection is core but not the whole product, calls for clear next steps, honest confidence, privacy by design, and provides synthetic scenarios/taxonomy/baseline. Its State Farm prompt asks for urgent-need identification, assistance coordination, and no one overlooked. Photon lists a Voice Call Winner.
+- Photon [2.0 announcement](https://photon.codes/blog/introducing-photon-2.0) describes inbound/outbound calls over SIP and voice-tool cookbooks; LiveKit's [inbound workflow](https://docs.livekit.io/telephony/accepting-calls/workflow-setup/) describes routing SIP callers to a room/agent.
+- Platform boundary check: Apple [Call Directory](https://developer.apple.com/documentation/callkit/identifying-and-blocking-calls) identifies/blocks by number; Android [CallScreeningService](https://developer.android.com/reference/android/telecom/CallScreeningService) receives limited call metadata and must respond before ringing, not a speech transcript.
+
+- No code, product UI, credentials, phone line, real audio, or resident data changed in this review. Waiting on product decisions before revising Flare/Beacon boundaries or claiming the scam-call flow works.

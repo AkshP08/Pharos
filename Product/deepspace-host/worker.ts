@@ -257,6 +257,36 @@ export default {
     const pathname = url.pathname
     const method = request.method.toUpperCase()
     if (method === 'OPTIONS' && pathname.startsWith('/api/')) return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type,Authorization', 'Cache-Control': 'no-store' } })
+    // Public presentation video: the hosting asset layer currently ignores Range.
+    // Serve explicit single-byte ranges so native seeking and chapter links work.
+    if (pathname === '/pharos-demo.mp4' && (method === 'GET' || method === 'HEAD')) {
+      const asset = await env.ASSETS.fetch(new Request(new URL('/pharos-demo.mp4', request.url), { method: 'GET' }))
+      if (!asset.ok) return asset
+      const bytes = new Uint8Array(await asset.arrayBuffer())
+      const headers = new Headers(asset.headers)
+      headers.set('Content-Type', 'video/mp4')
+      headers.set('Accept-Ranges', 'bytes')
+      headers.set('Content-Length', String(bytes.length))
+      headers.delete('Content-Encoding')
+      const range = request.headers.get('Range')
+      const ifRange = request.headers.get('If-Range')
+      if (method === 'HEAD' || !range || (ifRange && ifRange !== headers.get('ETag'))) return new Response(method === 'HEAD' ? null : bytes, { status: 200, headers })
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range)
+      let start = 0, end = bytes.length - 1
+      if (match && (match[1] || match[2])) {
+        if (match[1]) { start = Number(match[1]); if (match[2]) end = Math.min(Number(match[2]), end) }
+        else { const suffix = Number(match[2]); start = suffix > 0 ? Math.max(0, bytes.length - suffix) : bytes.length }
+      } else start = bytes.length
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= bytes.length || start > end) {
+        headers.set('Content-Range', `bytes */${bytes.length}`)
+        headers.set('Content-Length', '0')
+        return new Response(null, { status: 416, headers })
+      }
+      headers.set('Content-Range', `bytes ${start}-${end}/${bytes.length}`)
+      headers.set('Content-Length', String(end - start + 1))
+      return new Response(bytes.slice(start, end + 1), { status: 206, headers })
+    }
+
     if (pathname === '/api/auth/ok' && method === 'GET') return new Response('ok', { headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
 
     if (pathname === '/api/auth/status' && method === 'GET') {

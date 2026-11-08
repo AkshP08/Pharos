@@ -7,7 +7,7 @@ main = "worker.ts"
 directory = "dist"
 binding = "ASSETS"
 not_found_handling = "none"
-run_worker_first = ["/api/*", "/_deepspace/*", "/llms.txt", "/llms-full.txt", "/.well-known/mcp", "/.well-known/mcp.json", "/.well-known/mcp/*"]
+run_worker_first = ["/pharos-demo.mp4", "/api/*", "/_deepspace/*", "/llms.txt", "/llms-full.txt", "/.well-known/mcp", "/.well-known/mcp.json", "/.well-known/mcp/*"]
 
 [[durable_objects.bindings]]
 name = "PHAROS_STORE"

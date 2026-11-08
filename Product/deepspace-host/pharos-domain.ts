@@ -1,3 +1,6 @@
+import { deriveCallFacts } from './pharos-facts'
+import { analyzePressureText } from './pharos-pressure'
+
 export type Priority = 'immediate' | 'time-sensitive' | 'urgent' | 'follow-up'
 export type RiskLevel = 'high' | 'medium' | 'low'
 
@@ -33,6 +36,10 @@ export interface ScamSignal {
   kind: string
   label: string
   evidence: string
+  explanation?: string
+  psychology?: string
+  start?: number
+  end?: number
 }
 
 export interface PharosCase {
@@ -65,6 +72,9 @@ export interface PharosCase {
   createdAt: string
   updatedAt: string
   synthetic: boolean
+  priorityOverride?: { previousPriority: Priority; reason: string; at: string }
+  assignmentNeedsReview?: boolean
+  followUpOwner?: string | null
 }
 
 export interface CallSession {
@@ -80,6 +90,25 @@ export interface CallSession {
   endedAt: string | null
   transcriptionSource: string
   synthetic: boolean
+  purpose?: 'intake' | 'guard'
+  transport?: 'sip' | 'webrtc'
+  transcriptExpiredAt?: string
+  deliveryFailed?: boolean
+}
+
+export interface ResidentAlert {
+  id: string
+  callId: string
+  headline: string
+  level: RiskLevel
+  signals: ScamSignal[]
+  nextStep: string
+  createdAt: string
+  synthetic: boolean
+  deliveryStatus: 'available' | 'pending' | 'accepted' | 'failed' | 'not-configured'
+  evidenceQuality?: string
+  confidence?: string
+  displayedAt?: string
 }
 
 export interface ScamReview {
@@ -104,7 +133,7 @@ export interface Incident {
   synthetic: boolean
 }
 
-const rankFor: Record<Priority, number> = {
+export const rankFor: Record<Priority, number> = {
   immediate: 0,
   'time-sensitive': 1,
   urgent: 2,
@@ -166,7 +195,7 @@ function captureLocation(turns: TranscriptTurn[]): string {
 }
 
 function answerAfterPrompt(turns: TranscriptTurn[], prompt: RegExp): string | null {
-  for (let i = 0; i < turns.length; i += 1) {
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
     if (turns[i].role === 'agent' && prompt.test(turns[i].text)) {
       const answer = turns.slice(i + 1).find((turn) => turn.role === 'caller')
       if (answer) return answer.text
@@ -175,29 +204,16 @@ function answerAfterPrompt(turns: TranscriptTurn[], prompt: RegExp): string | nu
   return null
 }
 
-export function analyzeScamText(input: string): { level: RiskLevel; headline: string; signals: ScamSignal[]; nextStep: string } {
-  const text = input.replace(/\s+/g, ' ').trim()
-  const patterns: Array<{ kind: string; label: string; pattern: RegExp }> = [
-    { kind: 'authority', label: 'Authority claim to verify', pattern: /\b(?:county|rescue office|fema|official|government|sheriff|police|utility|relief office|disaster agency)\b/i },
-    { kind: 'deadline', label: 'Deadline or pressure to act', pattern: /\b(?:within \d+|expires? in|act now|right now|immediately|urgent|before (?:it is|it's) too late|\d+\s*(?:minutes?|hours?))\b/i },
-    { kind: 'money_or_secret', label: 'Payment or sensitive information request', pattern: /\b(?:gift cards?|wire transfer|crypto(?:currency)?|payment app|pay (?:a |the )?(?:fee|charge)|fee to (?:reserve|access|get)|password|verification code|one[- ]time code|security code|social security|bank account)\b/i },
-    { kind: 'isolation', label: 'Discourages independent verification', pattern: /\b(?:do not call|don't call|do not tell|don't tell|keep (?:this|it) secret|only contact me|do not contact|don't contact)\b/i },
-    { kind: 'link', label: 'Link or download request', pattern: /(?:https?:\/\/|\bclick (?:the )?link|\bdownload (?:the )?app|\bopen this link)/i },
-    { kind: 'threat', label: 'Threat or consequence used as pressure', pattern: /\b(?:you will lose|will be cancelled|will be arrested|your request will be denied|no rescue|lose your place|seat will be cancelled)\b/i },
-  ]
-  const signals = patterns.flatMap(({ kind, label, pattern }) => {
-    const match = text.match(pattern)
-    return match ? [{ kind, label, evidence: match[0] }] : []
-  })
-  const hasRiskyAsk = signals.some((signal) => signal.kind === 'money_or_secret')
-  const hasPressure = signals.some((signal) => ['deadline', 'isolation', 'threat', 'authority'].includes(signal.kind))
-  const pressureWithoutAuthority = signals.filter((signal) => signal.kind !== 'authority').length
-  const level: RiskLevel = hasRiskyAsk && hasPressure ? 'high' : hasRiskyAsk || pressureWithoutAuthority >= 2 ? 'medium' : 'low'
-  const headline = level === 'high' ? 'Several strong pressure signals found' : level === 'medium' ? 'Some wording deserves verification' : 'Few pressure signals found'
-  const nextStep = hasRiskyAsk
-    ? 'Do not send money or share codes. End the contact and verify through an official number you find independently.'
-    : 'The wording cannot verify the sender. Check through an official contact you find independently.'
-  return { level, headline, signals, nextStep }
+export function eligibleRespondersFor(item: Pick<PharosCase, 'synthetic' | 'zoneId' | 'needs' | 'status' | 'followUpOwner'>, responders: Responder[]): string[] {
+  if (!item.zoneId || item.status === 'resolved') return []
+  return responders.filter(responder => responder.synthetic === item.synthetic && responder.approved && responder.available
+    && responder.serviceAreas.includes(item.zoneId!) && responder.assignedCount - (item.followUpOwner === responder.id ? 1 : 0) < responder.capacity
+    && (!item.needs.length || responder.capabilities.includes('general') || item.needs.some(need => responder.capabilities.includes(need))))
+    .map(responder => responder.id)
+}
+
+export function analyzeScamText(input: string): ReturnType<typeof analyzePressureText> {
+  return analyzePressureText(input)
 }
 
 function inferNeedTypes(text: string): string[] {
@@ -234,13 +250,13 @@ export function analyzeCall(input: {
   const callerTurns = turns.filter((turn) => turn.role === 'caller')
   const callerText = callerTurns.map((turn) => turn.text).join(' ').trim()
   const allText = transcriptText(turns)
+  const facts = deriveCallFacts(turns)
   const scam = analyzeScamText(callerText)
   const hasScamIntent = /\b(?:is this (?:a )?scam|check (?:if|whether)|suspicious (?:call|text|message)|someone called me|they asked me for|they told me to (?:pay|send|share))\b/i.test(callerText)
   const explicitHelpRequest = /\b(?:need help|please help|help me|need (?:a )?(?:ride|transport|evacuation|shelter|water|food|supplies|rescue|oxygen|medicine|medication)|need to (?:leave|get out|evacuate)|requesting (?:help|a ride|shelter|supplies))\b/i.test(callerText)
-  const explicitHazard = /\b(?:trapped|floodwater|water (?:is )?(?:rising|coming in|inside)|fire (?:is )?(?:inside|near)|injured|cannot breathe|can't breathe|unconscious|life.?threatening|in danger)\b/i.test(callerText)
-  const hasHelpNeed = explicitHelpRequest || explicitHazard || (!hasScamIntent && inferNeedTypes(callerText).length > 0)
-  const callKind = hasHelpNeed ? 'help' : hasScamIntent || scam.signals.length > 0 ? 'scam-check' : 'unclear'
-  const scamReview = scam.signals.length ? {
+  const hasHelpNeed = explicitHelpRequest || facts.immediateDanger === 'yes' || (!hasScamIntent && facts.needs.length > 0)
+  const callKind = hasHelpNeed ? 'help' : hasScamIntent || scam.shouldWarn ? 'scam-check' : 'unclear'
+  const scamReview = scam.shouldWarn || hasScamIntent ? {
     id: `SC-${callId}`,
     source: 'call' as const,
     sourceId: callId,
@@ -256,20 +272,12 @@ export function analyzeCall(input: {
   if (!hasHelpNeed && callKind === 'scam-check') return { caseRecord: null, scamReview, callKind }
   if (!callerText) return { caseRecord: null, scamReview, callKind }
 
-  const locationPromptAnswer = answerAfterPrompt(turns, /where (?:are you|can|should)|location|nearby (?:address|landmark)/i)
-  const locationText = (locationPromptAnswer || captureLocation(turns)).trim()
-  const location = findZone(locationText || callerText, zones)
+  const locationText = facts.locationText
+  const location = findZone(locationText, zones)
   const zone = location.zone
-  const safetyAnswer = answerAfterPrompt(turns, /immediate danger|anyone in danger|safe right now/i)
-  const dangerText = normalized(`${safetyAnswer || ''} ${callerText}`)
-  const immediatePattern = /\b(?:trapped|cannot get out|can't get out|cannot leave|can't leave|water (?:is )?(?:rising|coming in|inside)|floodwater inside|fire (?:is )?(?:inside|in the house|near (?:my|our) home)|smoke inside|serious(?:ly)? injured|cannot breathe|can't breathe|unconscious|life.?threatening)\b/i
-  const explicitYes = safetyAnswer ? /\b(?:yes|yeah|yep|correct)\b/i.test(safetyAnswer) : false
-  const explicitNo = safetyAnswer ? /\b(?:no|not right now|currently safe)\b/i.test(safetyAnswer) : false
-  const explicitUnknown = safetyAnswer ? /\b(?:not sure|unsure|don't know|do not know)\b/i.test(safetyAnswer) : false
-  const immediateDanger: PharosCase['immediateDanger'] = immediatePattern.test(dangerText) || explicitYes ? 'yes' : explicitNo ? 'no' : explicitUnknown ? 'unknown' : 'unknown'
-  const needs = inferNeedTypes(callerText)
-  const peopleCount = parsePeopleCount(callerText)
-  const requestText = callerText || 'Caller requested assistance.'
+  const immediateDanger = facts.immediateDanger
+  const needs = facts.needs
+  const peopleCount = facts.peopleCount
   const title = immediateDanger === 'yes' ? 'Immediate safety concern' : needs.includes('medical') ? 'Time-sensitive essential support' : needs.includes('evacuation') ? 'Evacuation or transport request' : needs.includes('shelter') ? 'Shelter request' : needs.length ? 'Disaster assistance request' : 'Call needs follow-up'
   let priority: Priority
   let priorityReason: string
@@ -317,7 +325,7 @@ export function analyzeCall(input: {
     priorityRank: rankFor[priority],
     priorityReason,
     followUp,
-    scamLevel: scam.signals.length ? scam.level : null,
+    scamLevel: scam.shouldWarn ? scam.level : null,
     scamSignals: scam.signals,
     status: 'new',
     eligibleResponders,

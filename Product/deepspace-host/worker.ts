@@ -1,5 +1,7 @@
 import { analyzeCall, analyzeScamText, orderedCases, parseTranscriptTurns, transcriptText, type CallSession, type PharosCase, type Responder, type ScamReview, type TranscriptTurn } from './pharos-domain'
 import { PharosStore } from './pharos-store'
+import { sendWarningSms } from './pharos-notify'
+import { sendPush, validatePushSubscription, type PushSubscription } from './pharos-push'
 export { PharosStore } from './pharos-store'
 
 export const __DO_MANIFEST__ = [
@@ -18,6 +20,15 @@ interface Env {
   PHAROS_VOICE_ROUTE_READY?: string
   PHOTON_VOICE_LINE_ID?: string
   LIVEKIT_URL?: string
+  PHAROS_SMS_ENABLED?: string
+  PHOTON_PROJECT_ID?: string
+  PHOTON_API_KEY?: string
+  PHOTON_SMS_SENDER_ID?: string
+  PHOTON_SMS_SENDER_NUMBER?: string
+  PHAROS_WARNING_RECIPIENT?: string
+  PHAROS_VAPID_PUBLIC_KEY?: string
+  PHAROS_VAPID_PRIVATE_KEY?: string
+  PHAROS_VAPID_SUBJECT?: string
 }
 
 const jsonHeaders = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
@@ -115,7 +126,7 @@ async function callStore(env: Env, action: string, data: Record<string, unknown>
     body: JSON.stringify({ action, ...data }),
   })
   const result = await response.json() as Record<string, unknown>
-  if (!response.ok) throw new Error(String(result.error || 'Storage request failed'))
+  if (!response.ok) throw Object.assign(new Error(String(result.error || 'Storage request failed')), { status: response.status })
   return result
 }
 
@@ -132,7 +143,7 @@ function isPublicDemoRoute(pathname: string, method: string): boolean {
 
 function maskedOverview(overview: Record<string, unknown>): Record<string, unknown> {
   const filtered = { ...overview }
-  for (const key of ['cases', 'calls', 'scamReviews']) {
+  for (const key of ['cases', 'calls', 'scamReviews', 'alerts']) {
     const items = Array.isArray(filtered[key]) ? filtered[key] as Array<Record<string, unknown>> : []
     filtered[key] = items.filter((item) => item.synthetic === true)
   }
@@ -175,65 +186,59 @@ function expiredNotice(): string {
   return 'This voice call is transcribed for a short-lived responder review. Do not share passwords, payment details, or one-time codes.'
 }
 
-async function handleVoiceIngest(request: Request, env: Env): Promise<Response> {
+async function hashToken(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
+  return toBase64Url(new Uint8Array(digest))
+}
+
+async function deliverWarning(env: Env, warning: import('./pharos-domain').ResidentAlert): Promise<void> {
+  const call = (await callStore(env, 'call.get', { id: warning.callId })).call as CallSession
+  if (call.consent !== 'yes' || call.transcriptExpiredAt) return
+  let pushAccepted = false
+  if (env.PHAROS_VAPID_PUBLIC_KEY && env.PHAROS_VAPID_PRIVATE_KEY && env.PHAROS_VAPID_SUBJECT) {
+    const records = await callStore(env, 'push.list', { callId: warning.callId })
+    const receiptToken = toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `receipt:${warning.id}`))
+    for (const item of records.subscriptions as Array<{ id: string; subscription: PushSubscription }>) {
+      let result: Awaited<ReturnType<typeof sendPush>> = { status: 'failed' }
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (!(await callStore(env, 'warning.exists', { id: warning.id })).active) return
+        result = await sendPush(item.subscription, { id: warning.id, title: 'Pharos: pause and verify', body: warning.nextStep, receiptToken }, { publicKey: env.PHAROS_VAPID_PUBLIC_KEY, privateKey: env.PHAROS_VAPID_PRIVATE_KEY, subject: env.PHAROS_VAPID_SUBJECT })
+        if (result.status !== 'failed') break
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)))
+      }
+      if (result.status === 'accepted') pushAccepted = true
+      if (result.status === 'expired') await callStore(env, 'push.remove', { id: item.id })
+    }
+  }
+  if (!(await callStore(env, 'warning.exists', { id: warning.id })).active) return
+  const sms = await sendWarningSms(warning, { enabled: call.purpose === 'guard' ? env.PHAROS_SMS_ENABLED : 'false', projectId: env.PHOTON_PROJECT_ID, apiKey: env.PHOTON_API_KEY, senderId: env.PHOTON_SMS_SENDER_ID, senderNumber: env.PHOTON_SMS_SENDER_NUMBER, recipient: env.PHAROS_WARNING_RECIPIENT })
+  await callStore(env, 'warning.delivery', { id: warning.id, status: pushAccepted || sms.status === 'accepted' ? 'accepted' : sms.status === 'not-configured' ? 'available' : 'failed' })
+}
+
+async function handleVoiceIngest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   if (!configuredResponderAuth(env)) return responseJson({ error: 'Live intake is disabled until responder access is secured.' }, 503)
   const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || ''
   if (!(await verifySecret(token, env.PHAROS_INGEST_TOKEN))) return responseJson({ error: 'Unauthorized voice event' }, 401)
   const body = await readBody(request)
+  const callId = String(body.callId || '')
+  if (!/^[a-zA-Z0-9._:-]{1,180}$/.test(callId)) return responseJson({ error: 'A safe callId is required' }, 400)
   const event = String(body.event || '')
-  const callId = String(body.callId || '').slice(0, 180)
-  if (!callId || !/^[a-zA-Z0-9._:-]+$/.test(callId)) return responseJson({ error: 'A safe callId is required' }, 400)
-
+  if (!['call.started', 'consent', 'consent.revoked', 'turn', 'call.ended'].includes(event)) return responseJson({ error: 'Unsupported voice event' }, 400)
+  let warningUrl: string | undefined
+  let warningTokenHash: string | undefined
   if (event === 'call.started') {
     await callStore(env, 'seed')
-    const startedAt = new Date().toISOString()
-    const call: CallSession = {
-      id: callId, provider: 'Photon SIP → LiveKit', status: 'ringing', consent: 'pending', transcript: '', turns: [], caseId: null, scamReviewId: null,
-      startedAt, endedAt: null, transcriptionSource: 'LiveKit Inference STT', synthetic: false,
-    }
-    await callStore(env, 'call.put', { call })
-    await pruneExpired(env)
-    return responseJson({ accepted: true, callId, disclosure: expiredNotice() }, 202)
+    const warningToken = toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `guard:${callId}`))
+    warningTokenHash = await hashToken(warningToken)
+    warningUrl = new URL(`/guard.html#${warningToken}`, request.url).href
   }
-
-  let existingCall: CallSession
-  try {
-    existingCall = (await callStore(env, 'call.get', { id: callId })).call as CallSession
-  } catch {
-    return responseJson({ error: 'Start the call session before sending updates' }, 409)
-  }
-
-  if (event === 'consent') {
-    const consent = body.consent === true ? 'yes' : 'no'
-    existingCall.consent = consent
-    existingCall.status = consent === 'yes' ? 'in-progress' : 'declined'
-    if (consent === 'no') existingCall.endedAt = new Date().toISOString()
-    await callStore(env, 'call.put', { call: existingCall })
-    return responseJson({ accepted: true, consent })
-  }
-
-  if (event === 'turn') {
-    if (existingCall.consent !== 'yes') return responseJson({ error: 'Transcript storage requires caller consent' }, 403)
-    const role = body.role === 'agent' ? 'agent' : body.role === 'caller' ? 'caller' : null
-    const text = String(body.text || '').trim().slice(0, 1800)
-    const sequence = Number(body.sequence)
-    if (!role || !text || !Number.isSafeInteger(sequence) || sequence < 0) return responseJson({ error: 'A role, transcript text, and sequence are required' }, 400)
-    const turn: TranscriptTurn = { role, text, at: new Date().toISOString() }
-    const turnResult = await callStore(env, 'call.turn', { callId, sequence, turn })
-    return responseJson({ accepted: true, callId, status: (turnResult.call as CallSession | undefined)?.status ?? 'in-progress', caseCreated: false }, 202)
-  }
-
-  if (event === 'call.ended') {
-    existingCall.status = 'completed'
-    existingCall.endedAt = new Date().toISOString()
-    const result = await buildAndPersistCall(env, existingCall, existingCall.caseId ?? undefined)
-    return responseJson({ accepted: true, callId, caseId: result.caseRecord?.id ?? existingCall.caseId })
-  }
-  return responseJson({ error: 'Unsupported voice event' }, 400)
+  const result = await callStore(env, 'voice.event', { callId, event, purpose: body.purpose, transport: body.transport, consent: body.consent, role: body.role, text: body.text, sequence: body.sequence, deliveryFailed: body.deliveryFailed === true, warningTokenHash })
+  if (result.warning) ctx.waitUntil(deliverWarning(env, result.warning as import('./pharos-domain').ResidentAlert))
+  return responseJson({ ...result, ...(warningUrl ? { warningUrl } : {}) }, event === 'call.started' || event === 'turn' ? 202 : 200)
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
     const pathname = url.pathname
     const method = request.method.toUpperCase()
@@ -264,7 +269,57 @@ export default {
     if (pathname === '/api/auth/logout' && method === 'POST') return responseJson({ authenticated: false }, 200, { 'Set-Cookie': 'pharos_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' })
 
     if (pathname === '/api/voice/ingest' && method === 'POST') {
-      try { return await handleVoiceIngest(request, env) } catch (error) { return apiError(error) }
+      try { return await handleVoiceIngest(request, env, ctx) } catch (error) { return apiError(error, (error as { status?: number }).status || 400) }
+    }
+
+    if (pathname === '/api/guard/enrollment' && method === 'POST') {
+      const bearer = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || ''
+      if (!configuredResponderAuth(env) || (!(await validSession(request, env)) && !(await verifySecret(bearer, env.PHAROS_INGEST_TOKEN)))) return responseJson({ error: 'Responder sign-in is required to enroll the consenting test recipient' }, 401)
+      const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)))
+      const result = await callStore(env, 'warning.enroll', { tokenHash: await hashToken(token) })
+      return responseJson({ ...result, warningUrl: new URL(`/guard.html#${token}`, request.url).href, scope: 'Consenting test recipient; guarded demo calls only' }, 201)
+    }
+
+    if (pathname === '/api/guard/received' && method === 'POST') {
+      try {
+      const bearer = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || ''
+      const body = await readBody(request)
+      const id = String(body.id || '')
+      if (!/^[a-zA-Z0-9._:-]{1,200}$/.test(id) || !configuredResponderAuth(env) || !(await verifySecret(bearer, toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `receipt:${id}`))))) return responseJson({ error: 'Invalid receipt' }, 401)
+      return responseJson(await callStore(env, 'warning.received', { id }))
+      } catch (error) { return apiError(error, (error as { status?: number }).status || 400) }
+    }
+
+    if (pathname === '/api/guard/unsubscribe' && method === 'POST') {
+      const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || ''
+      if (!/^[a-zA-Z0-9_-]{43}$/.test(token)) return responseJson({ error: 'A private warning link is required' }, 401)
+      try {
+        const body = await readBody(request)
+        const result = await callStore(env, 'push.unsubscribe', { id: await hashToken(String(body.endpoint || '')), tokenHash: await hashToken(token) })
+        return responseJson(result)
+      } catch (error) { return apiError(error, (error as { status?: number }).status || 400) }
+    }
+
+    if (pathname === '/api/guard/subscribe' && method === 'POST') {
+      const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || ''
+      if (!/^[a-zA-Z0-9_-]{43}$/.test(token)) return responseJson({ error: 'A private warning link is required' }, 401)
+      if (!env.PHAROS_VAPID_PUBLIC_KEY || !env.PHAROS_VAPID_PRIVATE_KEY) return responseJson({ error: 'Phone notifications are not configured yet' }, 503)
+      try {
+        const body = await readBody(request)
+        if (!(await validatePushSubscription(body.subscription))) return responseJson({ error: 'Invalid notification subscription' }, 400)
+        const subscription = body.subscription as PushSubscription
+        const result = await callStore(env, 'push.subscribe', { id: await hashToken(subscription.endpoint), tokenHash: await hashToken(token), subscription })
+        return responseJson(result, 201)
+      } catch (error) { return responseJson({ error: 'Unable to register this notification subscription' }, (error as { status?: number }).status || 400) }
+    }
+
+    if (pathname === '/api/guard/status' && method === 'GET') {
+      const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || ''
+      if (!/^[a-zA-Z0-9_-]{43}$/.test(token)) return responseJson({ error: 'A private warning link is required' }, 401)
+      try {
+        const result = await callStore(env, 'warning.lookup', { tokenHash: await hashToken(token) })
+        return responseJson({ ...result, pushPublicKey: env.PHAROS_VAPID_PUBLIC_KEY || null })
+      } catch { return responseJson({ error: 'Warning link is unavailable or expired' }, 404) }
     }
 
     const publicDemo = isPublicDemoRoute(pathname, method)
@@ -325,12 +380,22 @@ export default {
       const claimMatch = pathname.match(/^\/api\/cases\/([a-zA-Z0-9._:-]+)\/claim$/)
       if (claimMatch && method === 'POST') {
         const body = await readBody(request)
-        return responseJson(await callStore(env, 'case.claim', { id: claimMatch[1], responderId: String(body.responderId || '') }))
+        return responseJson(await callStore(env, 'case.claim', { id: claimMatch[1], responderId: String(body.responderId || ''), syntheticOnly: !configuredResponderAuth(env) }))
+      }
+      const followupOwnerMatch = pathname.match(/^\/api\/cases\/([a-zA-Z0-9._:-]+)\/followup-owner$/)
+      if (followupOwnerMatch && method === 'POST') {
+        const body = await readBody(request)
+        return responseJson(await callStore(env, 'case.followup-owner', { id: followupOwnerMatch[1], responderId: body.responderId, syntheticOnly: !configuredResponderAuth(env) }))
+      }
+      const priorityMatch = pathname.match(/^\/api\/cases\/([a-zA-Z0-9._:-]+)\/priority$/)
+      if (priorityMatch && method === 'POST') {
+        const body = await readBody(request)
+        return responseJson(await callStore(env, 'case.priority', { id: priorityMatch[1], priority: body.priority, reason: body.reason, role: await getSessionRole(request, env) || 'demo', syntheticOnly: !configuredResponderAuth(env) }))
       }
       const statusMatch = pathname.match(/^\/api\/cases\/([a-zA-Z0-9._:-]+)\/status$/)
       if (statusMatch && method === 'POST') {
         const body = await readBody(request)
-        return responseJson(await callStore(env, 'case.status', { id: statusMatch[1], status: String(body.status || '') }))
+        return responseJson(await callStore(env, 'case.status', { id: statusMatch[1], status: String(body.status || ''), syntheticOnly: !configuredResponderAuth(env) }))
       }
       if (pathname === '/api/responders' && method === 'POST') {
         const body = await readBody(request)
@@ -354,7 +419,7 @@ export default {
         if (responder.serviceAreas.some((zoneId) => !knownZones.has(zoneId))) return responseJson({ error: 'Choose only configured response areas.' }, 400)
         if (responder.capabilities.some((capability) => !allowedCapabilities.has(capability))) return responseJson({ error: 'One or more responder capabilities are unsupported.' }, 400)
         if (!Number.isFinite(responder.capacity)) return responseJson({ error: 'Capacity must be a number between 0 and 100.' }, 400)
-        await callStore(env, 'responder.put', { responder })
+        await callStore(env, 'responder.put', { responder, syntheticOnly: !configuredResponderAuth(env) })
         return responseJson({ responder, note: 'A coordinator must approve this profile before it receives cases.' }, 201)
       }
       const responderApproval = pathname.match(/^\/api\/responders\/([a-zA-Z0-9._:-]+)\/approval$/)
@@ -365,7 +430,7 @@ export default {
         const responder = (overview.responders as Responder[]).find((item) => item.id === responderApproval[1])
         if (!responder) return responseJson({ error: 'Responder profile was not found.' }, 404)
         responder.approved = body.approved === true
-        await callStore(env, 'responder.put', { responder })
+        await callStore(env, 'responder.put', { responder, syntheticOnly: !configuredResponderAuth(env) })
         return responseJson({ responder })
       }
 
@@ -373,7 +438,7 @@ export default {
       return env.ASSETS.fetch(request)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Request failed'
-      const status = /not found/i.test(message) ? 404 : /already claimed|not eligible/i.test(message) ? 409 : 400
+      const status = (error as { status?: number }).status || (/not found/i.test(message) ? 404 : /already claimed|not eligible/i.test(message) ? 409 : 400)
       return apiError(error, status)
     }
   },

@@ -1,43 +1,53 @@
 # Pharos
 
-**Flare** is a resident phone hotline. **Beacon** is the responder website: it ranks changing reports by explainable urgency and service area, keeps accountable owners, and records human response updates. Residents do not fill out a help form or give a name. A separate protected-call mode reviews caller words for psychological pressure and can warn a paired resident phone.
+Pharos is a **responder-facing disaster intake desk**. A resident calls the hotline; Pharos collects a brief consented report. Beacon keeps requests ranked by reported urgency and area while separately highlighting requests that need human verification.
 
-**Start with [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md).** It covers the two test phones, readiness checks, four manual calls, recipient setup, and a three-minute demonstration.
+[Open Beacon](https://signalbridge-hackutd-2026.app.space) · [Demo runbook](DEMO_RUNBOOK.md) · [Delivery checklist](DELIVERY_CHECKLIST.md)
 
-## Verified status
-
-The [DeepSpace app](https://signalbridge-hackutd-2026.app.space) is deployed. Hosted health, authentication protection, and recipient assets were checked. One real consenting fictional Photon call reached LiveKit speech recognition and persisted a three-person case with 16 turns and no transcript-delivery failure. This is real phone-integration evidence; it is not a claim of operational emergency dispatch.
-
-The last completed QA checkpoint reported passing lanes: **152 backend checks, 76 offline voice checks, and 35 Guard/Beacon UI contracts**. A root-owned file-change watcher is active; [QA_WATCH.md](QA_WATCH.md) explains its status and pause controls. These checks do not prove a phone banner, microphone performance, or a real-world fraud-detection accuracy rate.
-
-**Hosted voice startup: RUNNING; audio acceptance: OPEN.** A synthetic WebRTC test reached speech recognition, persisted an urgent three-person shelter case, and completed disconnect/room cleanup. The overall test failed because a later generic library remark replaced the precise location and lost area routing; that regression is being fixed and must be rechecked. This test is not a new Photon call. The old local worker is stopped; confirm the current version and active mode before manual calls. The shorter phone opening, live responder announcement, real worsening callback, two-party relay, and actual Phone B banner still need their current-build manual checks.
-
-## What the app does
-
-- **Updates during and between calls.** Consented partial turns reach the desk before hangup. Conservative returning-call linkage requires the same-situation report, a substantial current-location match, and one eligible recent open case. The latest report replaces current facts while history and ownership remain visible.
-- **Routes by urgency and area.** Explicit danger, time-sensitive needs, and missing facts produce explained suggestions. Unknown location stays visible, including immediate cases. Approved capability, coverage, availability, and capacity determine assignment eligibility.
-- **Keeps humans accountable.** The desk can claim, own follow-up, review priority with a reason, resolve/reopen, and report travel, delay, arrival, or inability to attend. An ETA is supplied by the desk; new danger or changed coverage can invalidate it. A claim alone does not mean help was dispatched.
-- **Reviews manipulation in context.** Guard mode uses bounded model review of consented caller text. Exact evidence and psychological labels explain the warning; invalid, stale, or unavailable output is withheld and explicitly unverified. Tone, accent, and caller identity are not model inputs.
-- **Remembers contacts cautiously.** Phone contacts are encrypted at rest with purpose-separated keyed lookups and at most 24-hour retention. Three distinct prior flagged guard calls can produce a caller-ID-history caution. That does not prove identity, block help, or replace current speech analysis.
-- **Warns a paired phone.** A private 24-hour link pairs the optional warning PWA before a guard call. Foreground display and permission-based Web Push are implemented. Actual notification delivery during a two-phone call remains unverified; provider acceptance, device-reported display, and human reading are separate facts. SMS is disabled.
-
-## Runtime and limits
+## The current product
 
 ```text
-Help mode: Phone A → Photon → LiveKit intake/STT → protected Worker → SQLite case → Beacon
-Guard mode: Phone A → Photon/LiveKit → Phone B; caller transcript → context review → paired PWA
+Caller → Photon → LiveKit speech/intake → protected Worker + SQLite → Beacon
+                                    ├─ urgency, location, needs, changing history
+                                    └─ bounded caller-text review → review badge
 ```
 
-The single Photon number serves these test modes **sequentially**. The operator changes the runtime/dispatch deliberately between demonstrations. Pharos cannot screen arbitrary cellular calls to a personal number. Spoken location is matched to configured prototype areas; it is not GPS or flood sensing.
+- Every intake request remains in the urgency queue, including concerning or incomplete reports. Immediate-danger facts remain visible; a review badge never reduces their reported urgency.
+- No supported content concern permits normal responder assignment. A flagged, pending, uncertain, or unavailable assessment requires explicit human acceptance before assignment or an ETA. An accepted decision records its reason and exact evidence version. Dismissal keeps the request and audit history.
+- Psychological review looks for concrete unsafe requests and supporting pressure: money/secrets, device control, or explicitly bypassing safeguards. A separate verification basis covers an explicit current false-report admission plus a request to divert resources. It cannot establish whether an emergency is real from speech alone.
+- Fear, anger, panic, accent, missing names, corrected details, and ordinary urgent rescue requests are not fraud signals. “No concern identified” does not verify identity or truth.
+- Human reviewers can read exact quoted evidence and, when recording consent was given and upload completed, manually play private caller-only audio. Tone and pacing provide human context; they are not automatic deception scores.
+- New reports update current facts, urgency, area, history, ownership review, and response estimates. Conservative same-phone callback linkage requires fresh consent, explicit same-situation intent, and a substantial matching location. No name is required.
+- Responders own actual decisions. Travel and arrival estimates require an explicit desk report; the bot never invents an ETA or infers arrival from elapsed time.
 
-The approved spending boundary is **$5 existing Photon credit, no cash, one number, no paid-plan or SMS campaign upgrade**. The number used $2; test-call usage consumes the remainder and must be reconciled. LiveKit model checks have a separate **$0.25 existing-credit cap**. See [PHOTON_SETUP.md](PHOTON_SETUP.md) for observed rates and account state.
+## Evidence and remaining acceptance
 
-The Worker stores no raw audio. Transcript sharing starts after clear consent, withdrawal stops collection and scrubs relevant evidence/access/contact history, and scheduled retention is at most 24 hours. Minimal structured request facts may remain. Provider processing and recipient-device copies have separate limits.
+One real consenting fictional Photon call reached speech recognition and persisted a three-person case. A later hosted synthetic WebRTC check passed speech, persistence, location/area retention, completion, and cleanup after finding and fixing a generic-location overwrite. That is simulation evidence, not a replacement for a current Photon call.
 
-## Build, evidence, and submission
+The **responder-review and recording build passes 243 compiled backend/UI checks and 108 offline voice checks**. Hosted recording playback and current-build real calls remain separate acceptance gates. Check the watcher status rather than reusing a green result after new edits:
 
-Use [deepspace-host/README.md](deepspace-host/README.md) for builds, deployment, private server configuration, and API routes; [voice-agent/README.md](voice-agent/README.md) for runtime setup. The build generates a public `build.json` source stamp: after publishing, verify its commit and `dirty:false` against the intended Git revision. The deployment service's GitHub-source metadata does not itself provide reliable commit lineage.
+```sh
+node Product/qa-watch.mjs --status
+```
 
-[PROJECT_LOG.md](PROJECT_LOG.md) records failures, fixes, tests, and plan changes. [DELIVERY_CHECKLIST.md](DELIVERY_CHECKLIST.md) tracks remaining acceptance gates, and [JUDGE_FEEDBACK.md](JUDGE_FEEDBACK.md) links judge recommendations to owners and verification. The canonical repository is [AkshP08/Pharos](https://github.com/AkshP08/Pharos).
+The new six-case fictional model check produced matching warning decisions in all six, with one preselected tactic-category mismatch. It is a small synthetic test, not field accuracy or a lie-detection claim. Prior failed evaluations remain preserved.
 
-State Farm, T-Mobile Safe Signal, Photon, and General/Beginner are the intended targets. The supplied T-Mobile slide permits team-created synthetic scenarios. MongoDB Atlas, Tiger Data, Gemini API, Solana, and Vultr are not integrated or claimed. Urgency suggestions are prototype rules, profiles/areas are demonstration data, and shared passwords are not verified responder identities. Final submission is November 8, 2026 at noon CST; the initial Devpost entry exists.
+The current-build phone acceptance is three scenarios: genuine help with an emotional benign control, worsening callback to the same case, and an explicit concerning request held for reasoned human review with private recording playback. See the runbook for scripts and failure criteria.
+
+## Consent, storage, and limits
+
+The brief opening asks permission for transcript and caller audio and offers **transcript only**. Audio starts after explicit recording consent is acknowledged; consent-and-facts spoken in the same opening utterance may not be recorded. No raw audio is kept before that acknowledgment. Caller-only PCM is bounded to 180 seconds, encrypted in existing SQLite storage, and served only to signed-in responders. Clear completed calls discard audio; retained review evidence expires within 24 hours of its source call and is removed on consent withdrawal. Provider retention has separate limits.
+
+Phone contacts use encrypted storage and purpose-separated keyed lookup. Caller ID is unverified and can be spoofed. The older three-call history caution is advisory; it cannot establish fraud or replace current evidence.
+
+The approved boundary remains one Photon number, at most **$5 existing Photon credit, no cash**, no paid-plan or SMS campaign upgrade, and **$0.25 existing LiveKit model-check credit**. No new recording service or external storage account is required. Shared desk passwords and configured areas/responders are prototype fixtures, not verified responder identities, GPS, flood sensing, or operational emergency dispatch.
+
+## Build and submission
+
+The source is [AkshP08/Pharos](https://github.com/AkshP08/Pharos). Completed task chunks are committed and pushed using the configured human author. [PROJECT_LOG.md](PROJECT_LOG.md) records failures, workarounds, decisions, and validation; [JUDGE_FEEDBACK.md](JUDGE_FEEDBACK.md) tracks feedback acceptance.
+
+Use [deepspace-host/README.md](deepspace-host/README.md) for builds/APIs and [voice-agent/README.md](voice-agent/README.md) for voice setup. After publishing, require `/build.json` to match the intended committed source with `dirty:false`; the platform itself omits GitHub commit lineage.
+
+State Farm, T-Mobile Safe Signal, Photon, and General/Beginner are the intended targets. Supplied T-Mobile instructions permit team-created scenarios. MongoDB Atlas, Tiger Data, Gemini API, Solana, and Vultr are not integrated or claimed. The initial Devpost entry exists; final submission is November 8, 2026 at noon CST.
+
+**Future work:** resident-facing scam alerts through a paired app, push/SMS, and protected two-party calls. The earlier Guard/PWA experiment is not a required or verified part of the current responder-only demo; relay and SMS remain disabled.

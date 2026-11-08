@@ -1,95 +1,78 @@
 # Pharos system plan
 
-Updated November 8, 2026. The responder backend is deployed and one real consenting fictional Photon intake has reached Beacon. Protected-call relay/banner, current-build spoken ETA, and a location-retention audio regression remain separate acceptance gates. Use [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) for operation and recording.
+Updated November 8, 2026 after the user's responder-only pivot. Final submission is noon CST. [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) defines the current three-call acceptance, and [PROJECT_LOG.md](PROJECT_LOG.md) preserves the previous architecture and failures.
 
-## Product and verified state
+## Product contract
 
-**Flare** is a resident phone hotline; **Beacon** is a responder website. Residents report what is happening and where they are without a name or a web intake form. The desk combines explained urgency, service areas, capacity, accountable ownership, changing reports, and human-confirmed response progress. The optional resident PWA is for protected-call warning setup/display only.
-
-Final submission is November 8 at noon CST; the initial Devpost entry exists. The required demonstrations are a real help/callback flow and a two-party protected-call warning. State Farm, T-Mobile Safe Signal, Photon, and General/Beginner are intended targets. The supplied T-Mobile slide permits team-created synthetic scenarios. MongoDB, Tiger Data, Gemini API, Solana, and Vultr are not integrated or claimed.
-
-| Component | Verified evidence | Remaining acceptance |
-| --- | --- | --- |
-| DeepSpace Worker/SQLite | Published app health 200, protected overview 401 without authentication, recipient assets 200. Persistent real intake: consent yes,16 turns,three-person case,delivery failure false. | Publish/verify the current source stamp after final changes; complete manual current-build browser/phone checks. |
-| Voice intake | Real Photon→LiveKit speech→Worker case path succeeded once. Short21-word interruptible opening, deterministic consent, ordered delivery, finite lifetime, and progress polling are in current code. | Audio-check the current opening and exact desk-confirmed ETA; investigate the earlier unexplained post-call AttributeError if it recurs. |
-| Hosted agent | LiveKit reports Running; old local worker stopped. Synthetic WebRTC test reached first audio in 8.051 seconds, saved a consented urgent three-person shelter case, and passed disconnect/room deletion. Ring 60 seconds/max 180 seconds. | **Overall audio acceptance OPEN:** later generic library wording lost precise area routing. Fix/rerun pending. This is WebRTC simulation, not a new Photon call. |
-| Changing cases/contacts | Integrated repeat-case, encrypted-contact, purpose separation, risk history, consent/expiry, monotonic ETA versioning, and new-danger/coverage invalidation tests pass. | Real worsening callback preserving one case and ownership; shared-phone different-location control when time permits. |
-| Beacon | Ranked area queues, visible unknown-location urgency, eligibility/capacity, follow-up ownership, priority audit, response-status/ETA controls, and 35 UI contracts. | Deployed visual review and desk update heard during an active call. |
-| Guard and notifications | Bounded contextual reviewer, exact evidence validation, stale-result rejection, explicit unavailable state, private pre-enrollment, push adapter, and foreground warning PWA. Photon outbound TLS/SHA-256 and scoped LiveKit outbound configuration exist. | Connect Phone A→Phone B, show a real banner before hangup, measure timestamps, then test benign urgent speech. SMS remains disabled. |
-
-The last completed root-owned watcher checkpoint had passing **152 backend, 76 offline voice, 35 UI-contract** lanes. Backend checks include 29 facts, 12 caller-module, 3 caller-integration, and 12 response-progress cases. Test counts are regression evidence, not physical delivery or emergency/fraud validation. [QA_WATCH.md](QA_WATCH.md) describes its offline boundaries and build pause controls.
-
-## Help and changing reports
+Residents call the automated **Pharos hotline**; **Beacon** is entirely responder-facing. A name or resident web form is not required. The same urgency/area queue contains every request, including suspicious or incomplete reports. Reported danger is independent of verification state.
 
 ```text
-Phone A → Photon SIP → LiveKit short intake/STT
-  → consented ordered turns → protected Worker/SQLite
-  → partial case, current facts, history, priority/area suggestions
-  → Beacon owner and human response report → exact server-supplied spoken update
+Caller → Photon SIP → LiveKit intake/STT
+  → consented ordered transcript → protected Worker/SQLite
+  ├─ current facts → urgency + area + responder eligibility
+  └─ caller-text review → clear / pending / needs human review
+  → Beacon: evidence + optional consented caller audio + reasoned human decision
+  → eligible assignment → explicit desk progress/ETA → server-authored voice update
 ```
 
-The opening is brief and can be interrupted by “yes” plus facts. After consent, the helper gathers the situation/current location first and skips facts already given. Immediate danger avoids routine readbacks. The Worker accepts no transcript turns before consent; speech services still process the consent choice. Agent text is not evidence of the resident's physical situation.
+`integrityReview` is a separate axis from priority. Pending, uncertain, failed, unavailable, flagged, and dismissed cases cannot receive normal assignment or an ETA until a human explicitly accepts the current evidence. They retain their reported urgency, area, and danger facts. A verification/follow-up owner can still clarify the report. “Clear” means no supported concern in reviewed words; it never verifies identity or physical truth.
 
-Contacts use encrypted phone storage and purpose-separated keyed lookups. The existing help lookup is preserved for earlier calls. A returning intake report links only after explicit same-situation intent, an independently supplied substantial location match, one eligible recent open case, and an ended prior source call. Ambiguous/shared locations, overlapping active calls, guard/browser calls, resolved cases, and expired/revoked history do not silently merge. A name or special phrase is never required to receive help.
+Human acceptance/dismissal requires a meaningful reason and exact review version, source call, and source sequence. Server-side gates enforce this even if the client is bypassed. Decisions are audited; dismissal retains the case and history. Later supported concerns can reopen review and invalidate travel reassurance while preserving accountable ownership. Stale or late model results cannot override a same-version human decision; a benign result cannot automatically erase an established concern.
 
-New reports supply current facts rather than appending old speech into a timeless incident. History retains progression, original case age, and accountable ownership. Fresh danger can raise urgency above an earlier downgrade while keeping the human decision auditable. Uncertainty remains visible. Pharos re-triages **when reports arrive**; it does not monitor a resident or measure water levels between calls.
+## Evolving cases, urgency, and area
 
-## Urgency, area, and response estimates
+Consented partial reports create/update cases before hangup. Each report supplies current facts instead of concatenating old transcripts into a timeless situation. New danger can increase urgency above an earlier human downgrade; corrections, location changes, and coverage changes remain auditable. Pharos re-triages when new reports arrive, not through continuous flood measurement.
 
-| Suggested tier | Caller-reported evidence |
+| Suggested tier | Reported evidence |
 | --- | --- |
-| Immediate | Explicit danger, trapped/no safe exit, indoor/upstairs flooding, or a direct life-safety phrase. |
-| Time-sensitive | Essential medical/powered-equipment/medication support need without a stronger explicit hazard. |
-| Urgent | Evacuation, transport, shelter, or supplies without a stated immediate life-safety threat. |
-| Follow-up | Insufficient/uncertain facts; keep visible and clarify rather than infer safety. |
+| Immediate | Explicit life-safety danger, trapped/no safe exit, or dangerous indoor/upstairs flooding. |
+| Time-sensitive | Essential powered-equipment, medical, or medication support without stronger explicit danger. |
+| Urgent | Shelter, evacuation, transport, or supplies without stated immediate danger. |
+| Follow-up | Missing or uncertain facts; keep visible and clarify. |
 
-These are transparent prototype suggestions, not validated medical triage or dispatch rules. Spoken address/landmark/zone is matched to configured demonstration areas, not GPS. Immediate unknown-location requests stay in the ranked queue. A coordinator-approved responder must match area/capability/availability/capacity before claiming; follow-up ownership handles unmatched requests without pretending dispatch occurred. Changed coverage flags the assignment; capacity transfers/releases are accounted for.
+These are transparent prototype suggestions, not validated clinical triage. Unknown location never means low danger. Spoken landmarks/addresses/zones match configured demonstration areas; this is not GPS or live flood sensing. Approved coverage, capability, availability, and capacity determine normal assignment eligibility.
 
-The desk explicitly reports On the way, Delayed, Arrived, or Unable. Travel/delay requires an entered ETA of 1–180 minutes and the current case version. A claim alone never means help is coming. New danger/location/coverage can invalidate progress; elapsed ETA asks for an update and never marks arrival. During an active consented intake, the agent polls a private endpoint and speaks only the server's confirmed message once per revision, deferring while the caller/bot is busy. Until confirmation, the response is receipt with no confirmed arrival time. Shared desk sessions do not establish an individual responder's verified identity or physical location.
+Encrypted phone contacts and keyed lookup support conservative repeat retrieval. Linking requires fresh consent, explicit same-situation intent, an independently supplied substantial location match, one eligible recent open case, and an ended prior report. Shared/ambiguous/different locations, active parallel calls, closed or dismissed cases, and expired/revoked history do not silently merge. Caller ID can be spoofed and never proves identity. A later generic reference such as “at the library” preserves the earlier named library/zone; explicit relocation and correction remain separate.
 
-## Protected-call flow and history caution
+## Contextual verification and psychology
 
-```text
-Phone A → Photon/LiveKit guard → fixed consenting Phone B
-  → caller-only consented text → bounded contextual review
-  → exact validated evidence → Beacon + paired warning PWA/push
-```
+The model receives consented caller text, never phone number, raw audio, voice tone, accent, or inferred mental state. Exact caller-only quotations are checked against the supplied text; the server supplies known explanations. One request is in flight, latest snapshots coalesce, each call has a finite request limit, serialized input is at most 15 KB, output at most 800 tokens, timeout 8 seconds, and there are no model tools or retries. Withdrawal/end cancel outstanding work; unreviewed final speech becomes unavailable/human review rather than silently clear.
 
-The single Photon number serves intake and guard test modes sequentially; the operator switches dispatch/runtime deliberately. This is not concurrent protection for arbitrary personal cellular calls. Guard calls never become disaster help cases. Incoming consent precedes the fixed recipient relay; both phones must consent and loop checks must pass.
+Two distinct supported bases can require human verification:
 
-The contextual model is limited to one review in flight, coalesced current caller snapshots, eight reviews per call, a 15k-byte serialized input/schema cap, 800 output tokens, 8-second timeout, and no model retries/tools. The server validates current consent/sequence/open session, exact caller-only quotes, known categories, and supported action+pressure evidence. Invalid, stale, timed-out, or unavailable output remains explicitly unverified; semantic calls do not fall back to a literal-rule warning. The standalone synthetic message workbench still uses the separate rule inspector.
+1. **Pressure toward a concrete unsafe action.** Examples: transferring relief funds, sharing secrets/device control, or explicitly bypassing independent safety/verification checks under coercion. Urgency, authority, scarcity, reciprocity, prior commitment, guilt, social proof, or threats matter only in context of that request. At least two distinct supported kinds and exact evidence are required.
+2. **Explicit false-report admission plus resource diversion.** The caller explicitly states the current report was fabricated and asks resources to serve that stated non-emergency purpose. This is a separate verification concern, not automatically a psychological-pressure tactic or proof of real-world facts.
 
-Caller-ID history is a separate advisory. Only distinct consented guard calls with contextual warnings count; medium→high escalation in one call counts once. After three distinct prior warned calls, a new call may show “Caller ID has prior risk reports.” It is not current speech evidence or proof of identity, never blocks help, and never skips the current review. Withdrawal/expiry removes the relevant history.
+Ordinary rescue urgency, fear, anger, confusion, missing names, changed counts/locations, corrections, or unlikely circumstances cannot establish fabrication. Quoted threats, victim reports, training examples, negations, and rejected demands must not be attributed as active requests. Uncertain interpretation remains human review; it is not a fraud accusation.
 
-Pair Phone B before the call through the response desk's private 24-hour link. The PWA supports foreground polling and permission-based Web Push; installation/permission are manual device steps. Provider acceptance, device-reported display, and a person reading are separate states. No physical banner has been verified yet. SMS is disabled because no eligible campaign upgrade is authorized.
+Research grounding, with bounded interpretations:
 
-## Psychological grounding and detector boundaries
+- [FTC: How To Avoid a Scam](https://consumer.ftc.gov/articles/how-avoid-scam) describes impersonated authority, immediate-action pressure, threats, and risky payment requests. It grounds examples and independent-verification advice, not classifier accuracy.
+- [FTC: FEMA impersonators](https://consumer.ftc.gov/consumer-alerts/2025/07/spot-avoid-fema-impersonators) supports the narrow fact that FEMA does not charge for its disaster assistance/inspections; it does not imply every disaster-related fee is fraud.
+- [Vrij, Hartwig and Granhag: Reading Lies](https://doi.org/10.1146/annurev-psych-010418-103135) reviews weak/unreliable behavioral deception cues. Human playback supplies context; Pharos does not derive a lie score from tone or pacing.
+- [Khadka, Ullah and Marroquin: Unmasking persuasion in phishing](https://doi.org/10.1108/ICS-12-2024-0321) qualitatively examines persuasion in selected phishing emails. Its categories inspire explanations; email findings do not validate disaster-call detection or probabilities.
+- [FBI: False emergency calls have consequences](https://www.fbi.gov/news/stories/the-crime-of-swatting-fake-9-1-1-calls-have-real-consequences1) establishes that deliberately false reports can divert responders and cause harm. It does not establish that transcript interpretation can detect arbitrary fabricated emergencies.
 
-The contextual reviewer receives consented **caller text and requested behavior**. Phone number, voice tone, accent, and inferred mental state are not model inputs. The temporary caller allowlist controls test access/cost. Separate caller-ID history can produce a clearly labeled prior-risk caution after three distinct flagged calls; it does not establish identity, block help, or replace current analysis.
+## Human review audio, consent, and retention
 
-Research and consumer-protection sources checked on November 8, 2026:
+The brief opening discloses transcript and caller-audio sharing and offers **transcript only**. Audio capture starts only after recording consent is acknowledged; no pre-consent raw recording is retained. If consent and facts are spoken in one utterance, the audio of that utterance may be absent. For a recorded demo, consent separately before giving facts.
 
-- [FTC: How To Avoid a Scam](https://consumer.ftc.gov/articles/how-avoid-scam) describes impersonated authority, immediate-action pressure, threatened consequences, keeping someone on a call to prevent checking, and demanded payment methods. It recommends independent verification and talking to someone trusted. This is consumer guidance, not validation of a transcript classifier.
-- [FTC: Spot and avoid FEMA impersonators](https://consumer.ftc.gov/consumer-alerts/2025/07/spot-avoid-fema-impersonators) states that FEMA does not charge for disaster assistance or inspections. This supports a specific FEMA-plus-fee warning; it must not become a claim that every disaster-related service or payment is fraudulent.
-- [Khadka, Ullah and Marroquin: Unmasking persuasion in phishing](https://doi.org/10.1108/ICS-12-2024-0321) (published online 2025; journal issue 2026) qualitatively codes 200 phishing emails from 2014–2023. It examines combinations of authority, distraction/scarcity, social proof, commitment/consistency, and reciprocation, among other categories. The evidence concerns selected phishing emails, not live disaster calls; tactic frequency does not establish causation, detection accuracy, or a person's susceptibility.
-- [Omer and Pöhn: Psychological factors across social-engineering types](https://arxiv.org/html/2608.25670v1) (2026) compares simulated channels including voice in a 12-person laboratory study. Responses are stated intentions, not losses in real scams. The authors explicitly limit generalizability because of the small sample, laboratory setting, and narrow scenarios. Its percentages must not become Pharos risk probabilities.
+Caller-only 16 kHz mono PCM16 is bounded to 180 seconds/5,760,000 bytes. The agent uses memory, not a microphone, local recording file, Egress service, or new provider account. Up to 88 ordered 64 KiB chunks are encrypted with AES-GCM and purpose/call/sequence binding in existing SQLite storage. Retries are immutable and cannot extend retention. The complete recording is served as WAV only to authenticated responders, without URL credentials, preloading, or autoplay. The UI clears playback and revokes blob URLs on case change/logout and rejects late responses.
 
-Product interpretation: label observable cues—an official claim, short deadline, threatened loss, discouraging a second opinion, invoking a favor or earlier agreement, or claiming others complied—and quote the exact words. Use “may pressure” or “can discourage checking”; do not diagnose the caller or resident, assert intent, or say a tactic proves fraud. Reciprocity, commitment, and social proof can also occur in ordinary helpful conversations.
+Active/pending audio remains private until a final decision. Completed clear-call audio is discarded. Retained concern/review evidence expires no later than 24 hours from the source call and is removed on consent withdrawal. Missing or failed audio does not imply dishonesty or declined consent. Provider processing and recipient browser memory have separate limits; there is no claim of deleting external provider copies.
 
-Legitimate evacuation instructions can share urgency, authority, limited seats, and requests to stay connected. Review the requested action and anti-verification context rather than warning on these cues alone. “Stay on the line while I connect a dispatcher” needs different treatment from “stay on the line so you cannot call your bank.” Warnings should pause the risky payment, disclosure, or device-access action and offer independent verification without delaying immediate safety instructions. Maintain benign emergency, quoted-warning, negation, paraphrase, and speech-recognition-error controls; independently authored holdouts must remain separate from repaired regression examples. These sources ground explanations, not a validated detector or clinical assessment.
+## Response progress
 
-## Evaluation and evidence limits
+A claimed case is not dispatched help. An eligible accepted case's desk explicitly reports On the way, Delayed, Arrived, or Unable. Travel/delay requires an entered 1–180 minute estimate and the current case version. Fresh danger, location, coverage, or integrity concerns can invalidate progress. Time passing never implies arrival. During an active intake, private polling speaks only server-authored current messages and defers while someone is speaking.
 
-The frozen independent28-example literal-rule challenge remains TP 0,FP 2,TN 12,FN 14. It exposed brittleness and is preserved unchanged. An earlier contextual smoke produced3/3 benign no-warning and3/5 risky validated warnings; two risky outputs were withheld for invalid evidence. Those failures remain open. A later frozen six-case set produced three benign and three risky validated decisions through the actual SDK. These are small authored/synthetic checks, not population accuracy or a guarantee of prompt-injection resistance.
+## Validation, release, and scope
 
-The latest recorded context-review evaluation total is 15 known responses across 24 attempts, including 9 earlier DNS failures; estimated cumulative tariff is about $0.0043104 within the approved $0.25 existing-credit cap. Model latency is not end-to-phone warning latency. Keep event, review, provider-acceptance, device-display, and call-end timestamps separate during the manual demo.
+One prior real Photon intake reached Beacon. The later hosted synthetic audio rerun passed speech, consent, case facts, corrected area retention, completion, and cleanup; it was WebRTC simulation, not a new phone call. The responder-review/audio changes require their own compiled/backend, offline voice, browser, and current-build phone acceptance. Use `node Product/qa-watch.mjs --status` for current fingerprints; old green counts do not prove changed code.
 
-## Consent, retention, access, and release evidence
+The original literal detector's frozen 28-case result remains TP 0, FP 2, TN 12, FN 14. Earlier guard-context failures and small six-case results remain separate. The new frozen responder six-case check returned six matching warning decisions, with one expected category mismatch (`financial_control` instead of `money_or_secret`). Preserve that mismatch; neither set establishes field accuracy or real-world truth verification.
 
-No raw audio is stored by the Worker. Agent recording is disabled. Clear consent precedes delivered transcript turns; withdrawal stops collection and scrubs relevant speech/evidence/access/contact history. Scheduled expiry is at most 24 hours for live evidence, contacts/risk records, private access, and subscriptions; minimal structured help facts may remain. External providers and recipient-device copies have separate retention limits.
+Current context-model tariff estimate is about $0.0062796 after 21 known responses, not a finalized invoice or total voice cost. Approved limits remain $0.25 existing LiveKit model-check credit and one Photon number/up to $5 existing credit/no cash/no upgrade. Shared passwords, fixture responders/areas, and human status reports are prototype limitations. MongoDB Atlas, Tiger Data, Gemini API, Solana, and Vultr are not integrated.
 
-Only the existing app/project and approved credits are in scope: one Photon number, up to $5 existing Photon credit/no cash/no paid-plan or SMS campaign, plus $0.25 existing LiveKit model-test credit. Build has fixed included caps; hosting health still requires verification. Keep private numbers, credentials, warning links, provider metadata, and raw call content out of public captures and Git.
+Source is pushed to [AkshP08/Pharos](https://github.com/AkshP08/Pharos). Final publication must serve `/build.json` matching the clean tested commit. DeepSpace calls Vite directly, so maintained asset sync/source-stamp generation also runs from Vite configuration. Its GitHub-source metadata omits native commit lineage; do not claim otherwise.
 
-Source is backed up in [AkshP08/Pharos](https://github.com/AkshP08/Pharos). The app build generates `/build.json` with commit/dirty/time; verify it after publishing. DeepSpace's GitHub-source release metadata does not itself record recoverable commit lineage, even from a clean tree. Use the source stamp and pushed commit rather than claiming the platform supplied that evidence.
-
-[DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) owns the four-call sequence and recording plan. [DELIVERY_CHECKLIST.md](DELIVERY_CHECKLIST.md) and [JUDGE_FEEDBACK.md](JUDGE_FEEDBACK.md) own acceptance and feedback dispositions. [PROJECT_LOG.md](PROJECT_LOG.md) remains the chronological record. Next gates are the location-retention fix and audio rerun, current short intake/ETA/callback, physical guard/banner plus benign control, and final clean publish/source-stamp verification.
+**Future work, explicitly outside the core demo:** resident scam-warning PWA/push/SMS and protected two-party relay. Older experimental files remain for future work, but relay and SMS are disabled and resident enrollment is removed from Beacon. Current targets are State Farm, T-Mobile Safe Signal, Photon, and General/Beginner, with team-created scenarios as permitted by the supplied challenge.

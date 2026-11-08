@@ -385,3 +385,21 @@ test('revoking the newest report removes its evidence without reviving an older 
   assert.ok(record.history.every(entry => entry.callId !== 'newest-revoke-new'));
   assert.equal(record.followUp, true);
 });
+
+test('callback matches spoken and numeric zones despite prompted safety and people sentences',async t=>{
+ const mf=runtime(t);
+ await begin(mf,'spoken-zone-initial');
+ await ingest(mf,'turn','spoken-zone-initial',{role:'agent',text:'Where are you now?',sequence:0});
+ const initial=await turn(mf,'spoken-zone-initial','We are near Northbank library south entrance zone two. There are three of us. We are safe for now, but need shelter.',1);
+ await ingest(mf,'call.ended','spoken-zone-initial');
+ const next=await report(mf,'numeric-zone-callback',{text:'I am calling back about the same situation near Northbank library south entrance in Zone 2. Water is now rising inside our building and we cannot get out. There are three of us.'});
+ assert.equal(next,initial.caseId);
+ const item=await getCase(mf,next);assert.equal(item.priority,'immediate');assert.equal(item.zoneId,'zone-north');assert.equal(item.linkedCallCount,2);
+});
+
+test('callback recovers a legacy location snapshot from its retained source transcript',async t=>{
+ const mf=runtime(t);const id=await report(mf,'legacy-location-first',{text:'We need shelter near Northbank library south entrance zone two. We are safe.'});
+ const old=await getCase(mf,id);await command(mf,{action:'case.put',caseRecord:{...old,locationText:'Thanks.',zoneId:null}});
+ const next=await report(mf,'legacy-location-callback',{text:'I am calling back about the same situation near Northbank library south entrance in Zone 2. Water is now rising inside and we cannot get out.'});
+ assert.equal(next,id);const item=await getCase(mf,id);assert.equal(item.priority,'immediate');assert.equal(item.linkedCallCount,2);
+});

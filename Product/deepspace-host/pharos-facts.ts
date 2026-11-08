@@ -73,7 +73,8 @@ function correctionTail(text: string): { text: string; corrected: boolean } {
 
 function promptFor(text: string): Prompt {
   if (/\b(?:how many|number of)\b.{0,40}\b(?:people|persons|of you|need help|household|adults|children)\b/i.test(text)) return 'people'
-  if (/\b(?:where (?:are|can|should)|location|nearby (?:address|landmark)|what (?:address|landmark|zone)|which (?:area|zone|district))\b/i.test(text)) return 'location'
+  if (/\b(?:where (?:are|can|should)|location|nearby (?:address|landmark)|what (?:address|landmark|zone)|which (?:area|zone|district))\b/i.test(text)
+    && (/\?/.test(text) || /\b(?:where|what|which|tell|give|provide|confirm|repeat|share)\b/i.test(text))) return 'location'
   if (/\b(?:immediate danger|anyone in danger|in danger (?:right )?now)\b/i.test(text)) return 'safety'
   if (/\b(?:safe right now|currently safe|safe at (?:the )?moment)\b/i.test(text)) return 'safe'
   if (/\b(?:what (?:help|assistance)|help do you need|need most|time-sensitive need)\b/i.test(text)) return 'needs'
@@ -138,6 +139,7 @@ function locationCandidate(text: string, prompted: boolean): { value: string; re
   const current = relocation ? tail.text.slice(relocation.index ?? 0) : tail.text
   const corrected = tail.corrected || Boolean(relocation)
   const value = current.replace(/\bnot (?:in |at |near )?(?:zone|district)\s+(?:\d+|one|two|three|four|five)\b[^,.;]*(?:[,;]\s*)?/gi, '').trim()
+  if (/^(?:thanks|thank you|okay|ok|understood|goodbye|bye|that's all)[.! ]*$/i.test(value)) return { value: '', reported: false, corrected: false }
   if (prompted && /^(?:i |we )?(?:do not|don't|dont) know(?: where (?:i am|we are)| (?:my|our|the) (?:address|location|area))?[.! ]*$/i.test(value)) return { value: '', reported: true, corrected }
   const coordinate = value.match(/(?:^|[^\d])(-?\d{1,2}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,})(?!\d)/)?.[1]
   const address = value.match(/\b\d{1,6}\s+[\w .'-]{2,45}\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|highway|hwy\.?)\b/i)?.[0]
@@ -156,7 +158,8 @@ function locationCandidate(text: string, prompted: boolean): { value: string; re
   if (unknown && !plausible) return { value: '', reported: prompted || Boolean(relocation) || /\b(?:location|where|address|zone|area)\b/i.test(value), corrected }
   if (!prompted && !plausible) return { value: '', reported: false, corrected: false }
   const irrelevantAnswer = /^(?:yes|no|we need|i need|we (?:are|'re) (?:safe|trapped)|i (?:am|'m) (?:safe|trapped)|there are (?:\d+|one|two|three|four|five))\b/i.test(value) && !plausible
-  const chosen = prompted && !unknown && !irrelevantAnswer ? value : plausible || ''
+  const simpleAnswer = plausible && value.replace(/[.!?]+$/, '').trim() === plausible.trim()
+  const chosen = prompted && !unknown && !irrelevantAnswer && (!plausible || simpleAnswer) ? value : plausible || ''
   return {
     value: chosen.replace(/\s+(?:and |but )?(?:we|i) (?:need|require|have|are trapped|am trapped)\b.*$/i, '').trim(),
     reported: Boolean(chosen), corrected,

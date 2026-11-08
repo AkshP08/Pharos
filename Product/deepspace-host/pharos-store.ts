@@ -3,6 +3,7 @@ import { analyzeCall, analyzeScamText, eligibleRespondersFor, integrityAllowsDis
 import { semanticAnalysis } from './pharos-semantic'
 import { CallerStore } from './pharos-callers'
 import { CallerAudioStore, type SealedAudioChunk } from './pharos-audio'
+import { deriveCallFacts } from './pharos-facts'
 
 type StoreCommand = {
   action: string
@@ -23,7 +24,11 @@ function publicCall(call: CallSession): Omit<CallSession, 'callerRef' | 'reviewI
 }
 
 function locationKey(location: string): string | null {
-  const key = location.toLowerCase().normalize('NFKD').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  // Old prompted answers can contain the complete reply, including unrelated
+  // count/safety sentences. Match the reported place, not those changing facts.
+  const place = deriveCallFacts([{ role: 'caller', text: location, at: '' }]).locationText || location
+  const words: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' }
+  const key = place.toLowerCase().normalize('NFKD').replace(/\b(zone|district)\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/g, (_, kind, number) => `${kind} ${words[number]}`).replace(/\bin\s+(?=(?:zone|district)\b)/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
   // A zone alone is much too broad for a shared-phone incident match.
   return key.length >= 10 && /\b(?:near|at|by|beside|outside|street|st|road|rd|avenue|ave|drive|dr|lane|ln|boulevard|blvd|highway|hwy)\b/.test(key) ? key : null
 }
@@ -286,7 +291,10 @@ export class PharosStore extends DurableObject {
     for (const prior of recentCalls) {
       if (prior.id === call.id || prior.callerRef !== call.callerRef || prior.consent !== 'yes' || prior.transcriptExpiredAt || !prior.endedAt || prior.purpose === 'guard' || !prior.caseId || prior.caseId === current?.id) continue
       const item = this.getCase(prior.caseId)
-      if (!item || item.synthetic || item.status === 'resolved' || item.integrityReview?.status === 'dismissed' || item.incidentId !== candidate.incidentId || locationKey(item.locationText) !== key) continue
+      if (!item || item.synthetic || item.status === 'resolved' || item.integrityReview?.status === 'dismissed' || item.incidentId !== candidate.incidentId) continue
+      const source = item.callId === prior.id ? prior : item.callId ? this.getCall(item.callId) : null
+      const currentLocation = source?.consent === 'yes' && !source.transcriptExpiredAt ? deriveCallFacts(source.turns).locationText : ''
+      if (locationKey(currentLocation || item.locationText) !== key) continue
       // Never let parallel callbacks replace an ongoing report.
       if (recentCalls.some(other => other.id !== call.id && other.caseId === item.id && !other.endedAt && other.consent !== 'no')) continue
       matches.set(item.id, item)

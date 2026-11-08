@@ -271,3 +271,14 @@ test('a relative library reference does not conceal a subsequent conflicting ind
   const differentPlace = facts(caller('We are near Northbank Library in Zone 2.'), caller('We are near Riverbend Footbridge in Zone 3.'));
   assert.equal(differentPlace.locationText, '', 'Independent conflicting locations still require clarification');
 });
+
+test('a prompted location keeps only the place rather than unrelated changing report sentences', () => {
+ const result=facts(agent('Where are you now?'),caller('We are near Northbank library zone two. There are three of us. We are safe for now, but need shelter.'));
+ assert.equal(result.locationText,'near Northbank library zone two');
+ assert.equal(result.peopleCount,3);
+});
+
+test('location acknowledgements and thanks cannot erase a known place',()=>{
+ const r=facts(agent("What's happening, and where are you now?"),caller('We are near Northbank Library South entrance. Zone two.'),caller('There are three of us. We are safe for now, but we need shelter.'),agent('Thank you. I have your location and that three people need shelter. This request is for human review.'),caller('Thanks.'));
+ assert.match(r.locationText,/Northbank Library South entrance/);assert.match(r.locationText,/Zone two/);assert.equal(r.peopleCount,3);
+});

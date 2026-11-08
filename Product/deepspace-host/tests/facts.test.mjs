@@ -129,3 +129,35 @@ test('no safe way out is a rescue need, while denying that need is not', () => {
   assert.ok(facts(caller('There is no safe way out.')).needs.includes('evacuation'));
   assert.deepEqual(facts(caller('We do not need a safe way out.')), {locationText:'',immediateDanger:'unknown',peopleCount:null,needs:[],immediateEvidence:null});
 });
+
+test('an explicitly worsening situation replaces an earlier safe report', () => {
+  const result = facts(caller('We are safe and need drinking water.'), caller('Now water is rising inside our house. We cannot get out.'));
+  assert.equal(result.immediateDanger, 'yes');
+  assert.match(result.immediateEvidence, /water is rising inside|cannot get out/i);
+  assert.ok(result.needs.includes('supplies'));
+  assert.equal(facts(caller('We are safe.'), caller('We are trapped now.')).immediateDanger, 'yes');
+});
+
+test('a changing outdoor river or uncertain report does not invent current indoor danger', () => {
+  const outdoors = facts(caller('We are safe.'), caller('The river water is rising outside.'));
+  assert.equal(outdoors.immediateDanger, 'no');
+  assert.equal(outdoors.immediateEvidence, null);
+  const uncertain = facts(caller('We are safe.'), caller('I am not sure if water is now rising inside our house.'));
+  assert.equal(uncertain.immediateDanger, 'unknown');
+  assert.equal(uncertain.immediateEvidence, null);
+});
+
+test('agent or quoted scam wording cannot make an earlier safe situation worse', () => {
+  const prompted = facts(caller('We are safe.'), agent('Water might be rising inside; are you trapped now?'), caller('We are still safe.'));
+  assert.equal(prompted.immediateDanger, 'no');
+  const quoted = facts(caller('We are safe.'), caller('Someone called me and said water is rising inside unless I pay. Is this a scam?'));
+  assert.equal(quoted.immediateDanger, 'no');
+  assert.equal(quoted.immediateEvidence, null);
+});
+
+test('calling back about a situation does not make an exact people count approximate', () => {
+  const result = facts(caller('I am calling back about the same situation. We are near Riverbend footbridge, Zone 3. Water is now rising inside and we cannot get out. There are three of us.'));
+  assert.equal(result.peopleCount, 3);
+  assert.equal(result.immediateDanger, 'yes');
+  assert.equal(facts(caller('We are calling back about supplies. There are about three of us.')).peopleCount, null);
+});

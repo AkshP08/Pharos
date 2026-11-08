@@ -14,6 +14,17 @@ function decode<T>(value: unknown): T {
   return JSON.parse(String(value)) as T
 }
 
+function publicCall(call: CallSession): Omit<CallSession, 'callerRef'> {
+  const { callerRef: _privateLookup, ...visible } = call
+  return visible
+}
+
+function locationKey(location: string): string | null {
+  const key = location.toLowerCase().normalize('NFKD').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  // A zone alone is much too broad for a shared-phone incident match.
+  return key.length >= 10 && /\b(?:near|at|by|beside|outside|street|st|road|rd|avenue|ave|drive|dr|lane|ln|boulevard|blvd|highway|hwy)\b/.test(key) ? key : null
+}
+
 export class PharosStore extends DurableObject {
   private readonly sql: SqlStorage
   private readonly retentionMs: number
@@ -122,6 +133,27 @@ export class PharosStore extends DurableObject {
     this.sql.exec('INSERT INTO calls (id, status, started_at, synthetic, payload) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status = excluded.status, payload = excluded.payload', call.id, call.status, call.startedAt, Number(call.synthetic), JSON.stringify(call))
   }
 
+  private repeatCase(call: CallSession, current: PharosCase | null, candidate: PharosCase, callerText: string): PharosCase | null {
+    if (!call.callerRef || call.transport !== 'sip' || call.purpose === 'guard' || call.consent !== 'yes') return null
+    if (!/\b(?:calling (?:back|again)|same (?:situation|request|incident)|(?:an? |another )?update (?:on|about|to) (?:my|our|the) (?:situation|request|case)|called (?:you )?(?:earlier|before))\b/i.test(callerText)) return null
+    const key = locationKey(candidate.locationText)
+    if (!key) return null
+    // A provisional record can merge only while no responder work can be lost.
+    if (current && (current.status === 'resolved' || current.assignedTo || current.followUpOwner || current.priorityOverride || (current.linkedCallCount || 1) > 1)) return null
+    const recentCalls = this.rows<{ payload: string }>('SELECT payload FROM calls WHERE synthetic = 0 AND started_at > ?', new Date(Date.now() - this.retentionMs).toISOString())
+      .map(row => decode<CallSession>(row.payload))
+    const matches = new Map<string, PharosCase>()
+    for (const prior of recentCalls) {
+      if (prior.id === call.id || prior.callerRef !== call.callerRef || prior.consent !== 'yes' || prior.transcriptExpiredAt || !prior.endedAt || prior.purpose === 'guard' || !prior.caseId || prior.caseId === current?.id) continue
+      const item = this.getCase(prior.caseId)
+      if (!item || item.synthetic || item.status === 'resolved' || item.incidentId !== candidate.incidentId || locationKey(item.locationText) !== key) continue
+      // Never let parallel callbacks replace an ongoing report.
+      if (recentCalls.some(other => other.id !== call.id && other.caseId === item.id && !other.endedAt && other.consent !== 'no')) continue
+      matches.set(item.id, item)
+    }
+    return matches.size === 1 ? [...matches.values()][0] : null
+  }
+
   private refreshCall(call: CallSession): { caseRecord: PharosCase | null; warning: ResidentAlert | null } {
     const zones = this.rows<{ payload: string }>('SELECT payload FROM zones').map(row => decode<Zone>(row.payload))
     const responders = this.rows<{ payload: string }>('SELECT payload FROM responders').map(row => decode<Responder>(row.payload))
@@ -129,24 +161,48 @@ export class PharosStore extends DurableObject {
     const pressure = analyzeScamText(callerText)
     let caseRecord: PharosCase | null = null
     if (call.purpose !== 'guard') {
-      const previous = call.caseId ? this.getCase(call.caseId) : null
+      let previous = call.caseId ? this.getCase(call.caseId) : null
       const analysis = analyzeCall({ callId: call.id, turns: call.turns, zones, responders, incidentId: zones[0]?.incidentId || 'incident-trinity', synthetic: call.synthetic, createdAt: call.startedAt })
       caseRecord = analysis.caseRecord
       if (caseRecord) {
+        // An old source call may be finalized/retried after a newer snapshot.
+        if (previous && previous.callId !== call.id) return { caseRecord: null, warning: null }
+        const repeat = this.repeatCase(call, previous, caseRecord, callerText)
+        if (repeat) {
+          if (previous) this.sql.exec('DELETE FROM cases WHERE id = ?', previous.id)
+          previous = repeat
+          call.caseId = repeat.id
+          this.audit('case.repeat-linked', { caseId: repeat.id, callId: call.id, identityVerified: false })
+        }
         caseRecord.id = call.caseId || `PH-${call.id}`
+        caseRecord.latestPriority = caseRecord.priority
         if (call.transport === 'webrtc') {
           caseRecord.source = 'web'
           caseRecord.sourceLabel = 'LiveKit browser audio test · not a Photon phone call'
         }
         if (previous) {
+          caseRecord.createdAt = previous.createdAt
           caseRecord.status = previous.status
           caseRecord.assignedTo = previous.assignedTo
           caseRecord.followUpOwner = previous.followUpOwner
           caseRecord.priorityOverride = previous.priorityOverride
-          if (previous.priorityOverride) {
+          caseRecord.reassessmentRequired = previous.reassessmentRequired
+          const newlyWorse = rankFor[caseRecord.latestPriority] < rankFor[previous.latestPriority || previous.priority]
+            || caseRecord.immediateDanger === 'yes' && previous.immediateDanger !== 'yes'
+          if (newlyWorse) caseRecord.reassessmentRequired = true
+          if (previous.status === 'resolved' && previous.callId === call.id && newlyWorse && caseRecord.immediateDanger === 'yes') {
+            caseRecord.status = 'follow-up'
+            this.audit('case.active-danger-reopened', { caseId: caseRecord.id, callId: call.id })
+          }
+          if (newlyWorse && rankFor[caseRecord.latestPriority] < previous.priorityRank) {
+            caseRecord.reassessmentRequired = true
+            if (previous.priorityOverride) caseRecord.priorityOverride = { ...previous.priorityOverride, supersededAt: caseRecord.updatedAt }
+            this.audit('case.urgency-increased', { caseId: caseRecord.id, callId: call.id, from: previous.priority, to: caseRecord.priority })
+          } else if (previous.priorityOverride && !previous.priorityOverride.supersededAt || previous.priorityRank < caseRecord.priorityRank) {
             caseRecord.priority = previous.priority
             caseRecord.priorityRank = previous.priorityRank
-            caseRecord.priorityReason = previous.priorityReason
+            caseRecord.priorityReason = previous.priorityOverride && !previous.priorityOverride.supersededAt ? previous.priorityReason : 'Earlier higher urgency retained pending human review. Latest report: ' + caseRecord.priorityReason
+            if (previous.latestPriority && previous.latestPriority !== caseRecord.latestPriority) caseRecord.reassessmentRequired = true
           }
           if (previous.assignedTo) {
             const owner = responders.find(item => item.id === previous.assignedTo)
@@ -164,6 +220,19 @@ export class PharosStore extends DurableObject {
           caseRecord.followUp = true
           caseRecord.priorityReason += ' Transcript delivery was incomplete; confirm missing details.'
         }
+        const at = call.turns.filter(turn => turn.role === 'caller').at(-1)?.at || call.startedAt
+        const fields = ['immediateDanger', 'locationText', 'peopleCount', 'needs', 'priority'] as const
+        const changedFields = previous ? fields.filter(field => JSON.stringify(previous![field]) !== JSON.stringify(caseRecord![field])) : [...fields]
+        const priorHistory = previous?.history || (previous && previous.callId !== call.id ? [{ id: previous.callId || previous.id, callId: previous.callId || '', at: previous.updatedAt, kind: 'initial' as const, summary: 'Earlier help report', priority: previous.priority, reason: previous.priorityReason }] : [])
+        const existingEntry = priorHistory.find(entry => entry.callId === call.id && entry.kind !== 'responder-review')
+        const entry = {
+          id: call.id, callId: call.id, at, kind: (priorHistory.some(item => item.callId !== call.id) ? 'caller-update' : 'initial') as 'caller-update' | 'initial',
+          summary: `Danger ${caseRecord.immediateDanger === 'yes' ? 'reported' : caseRecord.immediateDanger === 'no' ? 'denied in this report' : 'not confirmed'}; people ${caseRecord.peopleCount ?? 'not confirmed'}; needs: ${caseRecord.needs.join(', ') || 'not confirmed'}.`,
+          previousPriority: existingEntry?.previousPriority || previous?.priority, priority: caseRecord.priority, reason: caseRecord.priorityReason,
+          changedFields: [...new Set([...(existingEntry?.changedFields || []), ...changedFields])],
+        }
+        caseRecord.history = [...priorHistory.filter(item => item.callId !== call.id || item.kind === 'responder-review'), entry].slice(-100)
+        caseRecord.linkedCallCount = new Set(caseRecord.history.filter(item => item.kind !== 'responder-review').map(item => item.callId)).size
         this.putCase(caseRecord)
         call.caseId = caseRecord.id
       }
@@ -192,7 +261,7 @@ export class PharosStore extends DurableObject {
     let call = this.getCall(id)
     if (event === 'call.started') {
       if (!call) {
-        call = { id, provider: command.transport === 'webrtc' ? 'LiveKit WebRTC audio test' : 'Photon SIP → LiveKit', transport: command.transport === 'webrtc' ? 'webrtc' : 'sip', purpose: command.purpose === 'guard' ? 'guard' : 'intake', status: 'ringing', consent: 'pending', transcript: '', turns: [], caseId: null, scamReviewId: null, startedAt: new Date().toISOString(), endedAt: null, transcriptionSource: 'LiveKit Inference STT', synthetic: false }
+        call = { id, provider: command.transport === 'webrtc' ? 'LiveKit WebRTC audio test' : 'Photon SIP → LiveKit', transport: command.transport === 'webrtc' ? 'webrtc' : 'sip', purpose: command.purpose === 'guard' ? 'guard' : 'intake', status: 'ringing', consent: 'pending', transcript: '', turns: [], caseId: null, scamReviewId: null, startedAt: new Date().toISOString(), endedAt: null, transcriptionSource: 'LiveKit Inference STT', synthetic: false, ...(typeof command.callerRef === 'string' ? { callerRef: command.callerRef } : {}) }
         this.putCall(call)
       }
       if (call.synthetic) throw new Error('Call ID belongs to a synthetic session')
@@ -211,6 +280,7 @@ export class PharosStore extends DurableObject {
       call.transcript = '[Transcript removed after consent was withdrawn]'
       call.turns = []
       call.transcriptExpiredAt = new Date().toISOString()
+      delete call.callerRef
       this.sql.exec('DELETE FROM transcript_turns WHERE call_id = ?', id)
       this.sql.exec('DELETE FROM scam_reviews WHERE source_id = ?', id)
       this.sql.exec('DELETE FROM resident_alerts WHERE call_id = ?', id)
@@ -219,10 +289,14 @@ export class PharosStore extends DurableObject {
       if (call.caseId) {
         const item = this.getCase(call.caseId)
         if (item) {
-          item.transcript = call.transcript
-          item.turns = []
-          item.scamSignals = []
-          item.scamLevel = null
+          if (item.callId === call.id) {
+            item.transcript = call.transcript
+            item.turns = []
+            item.scamSignals = []
+            item.scamLevel = null
+          }
+          item.history = item.history?.filter(entry => entry.callId !== call.id)
+          item.linkedCallCount = new Set(item.history?.filter(entry => entry.kind !== 'responder-review').map(entry => entry.callId)).size
           item.followUp = true
           if (item.status !== 'resolved' && !item.assignedTo) item.status = 'follow-up'
           this.putCase(item)
@@ -238,7 +312,10 @@ export class PharosStore extends DurableObject {
       if (call.consent !== 'pending' || call.endedAt) throw new Error('Consent has already been decided for this session')
       call.consent = consent
       call.status = consent === 'yes' ? 'in-progress' : 'declined'
-      if (consent === 'no') call.endedAt = new Date().toISOString()
+      if (consent === 'no') {
+        call.endedAt = new Date().toISOString()
+        delete call.callerRef
+      }
       this.putCall(call)
       return { accepted: true, consent }
     }
@@ -397,7 +474,7 @@ export class PharosStore extends DurableObject {
           const zones = this.rows<{ payload: string }>('SELECT payload FROM zones ORDER BY id').map((row) => decode<Zone>(row.payload))
           const responders = this.rows<{ payload: string }>('SELECT payload FROM responders ORDER BY id').map((row) => decode<Responder>(row.payload))
           const cases = this.rows<{ payload: string }>('SELECT payload FROM cases ORDER BY priority_rank, created_at').map((row) => decode<PharosCase>(row.payload)).map(item => ({ ...item, eligibleResponders: eligibleRespondersFor(item, responders) }))
-          const calls = this.rows<{ payload: string }>('SELECT payload FROM calls ORDER BY started_at DESC LIMIT 100').map((row) => decode<CallSession>(row.payload))
+          const calls = this.rows<{ payload: string }>('SELECT payload FROM calls ORDER BY started_at DESC LIMIT 100').map((row) => publicCall(decode<CallSession>(row.payload)))
           const scamReviews = this.rows<{ payload: string }>('SELECT payload FROM scam_reviews ORDER BY created_at DESC LIMIT 100').map((row) => decode<ScamReview>(row.payload))
           const alerts = this.rows<{ payload: string }>('SELECT payload FROM resident_alerts ORDER BY created_at DESC LIMIT 100').map(row => decode<ResidentAlert>(row.payload))
           return json({ incidents, zones, responders, cases, calls, scamReviews, alerts })
@@ -410,7 +487,7 @@ export class PharosStore extends DurableObject {
         }
         case 'call.get': {
           const row = this.rows<{ payload: string }>('SELECT payload FROM calls WHERE id = ?', String(command.id))[0]
-          return row ? json({ call: decode<CallSession>(row.payload) }) : json({ error: 'Call session was not found' }, 404)
+          return row ? json({ call: publicCall(decode<CallSession>(row.payload)) }) : json({ error: 'Call session was not found' }, 404)
         }
         case 'call.turn': {
           const callId = String(command.callId)
@@ -538,6 +615,8 @@ export class PharosStore extends DurableObject {
           caseRecord.priorityRank = rankFor[priority]
           caseRecord.priorityReason = `Human review: ${reason}`
           caseRecord.updatedAt = caseRecord.priorityOverride.at
+          caseRecord.reassessmentRequired = false
+          caseRecord.history = [...(caseRecord.history || []), { id: crypto.randomUUID(), callId: caseRecord.callId || '', at: caseRecord.updatedAt, kind: 'responder-review' as const, summary: 'Responder reviewed priority', previousPriority: caseRecord.priorityOverride.previousPriority, priority, reason }].slice(-100)
           this.putCase(caseRecord)
           this.audit('case.priority-reviewed', { caseId: caseRecord.id, priority, reason, role: command.role })
           return json({ caseRecord })
@@ -576,6 +655,7 @@ export class PharosStore extends DurableObject {
             call.transcript = '[Transcript expired under the configured retention policy]'
             call.turns = []
             call.transcriptExpiredAt = new Date().toISOString()
+            delete call.callerRef
             this.sql.exec('UPDATE calls SET payload = ? WHERE id = ?', JSON.stringify(call), row.id)
             this.sql.exec('DELETE FROM transcript_turns WHERE call_id = ?', row.id)
             const scamRows = this.rows<{ id: string; payload: string }>('SELECT id, payload FROM scam_reviews WHERE source_id = ? AND synthetic = 0', row.id)
@@ -586,12 +666,19 @@ export class PharosStore extends DurableObject {
               this.sql.exec('UPDATE scam_reviews SET payload = ? WHERE id = ?', JSON.stringify(review), scamRow.id)
             }
           }
-          const caseRows = this.rows<{ id: string; payload: string }>('SELECT id, payload FROM cases WHERE synthetic = 0 AND created_at < ?', cutoffIso)
+          // A case may outlive its original call. Expire evidence by its current
+          // source call, never by the incident's original creation timestamp.
+          const caseRows = this.rows<{ id: string; payload: string }>('SELECT id, payload FROM cases WHERE synthetic = 0')
           for (const row of caseRows) {
             const caseRecord = decode<PharosCase>(row.payload)
-            caseRecord.transcript = '[Transcript expired under the configured retention policy]'
-            caseRecord.turns = []
-            caseRecord.scamSignals = caseRecord.scamSignals.map((signal) => ({ ...signal, evidence: '[expired]' }))
+            const source = caseRecord.callId ? this.getCall(caseRecord.callId) : null
+            if (source ? Date.parse(source.startedAt) < cutoff : Date.parse(caseRecord.createdAt) < cutoff) {
+              caseRecord.transcript = '[Transcript expired under the configured retention policy]'
+              caseRecord.turns = []
+              caseRecord.scamSignals = caseRecord.scamSignals.map((signal) => ({ ...signal, evidence: '[expired]' }))
+            }
+            caseRecord.history = caseRecord.history?.filter(entry => Date.parse(entry.at) >= cutoff)
+            caseRecord.linkedCallCount = new Set(caseRecord.history?.filter(entry => entry.kind !== 'responder-review').map(entry => entry.callId)).size
             this.sql.exec('UPDATE cases SET payload = ? WHERE id = ?', JSON.stringify(caseRecord), row.id)
           }
           const standaloneScamRows = this.rows<{ id: string; payload: string }>('SELECT id, payload FROM scam_reviews WHERE synthetic = 0 AND source_id IS NULL AND created_at < ?', cutoffIso)

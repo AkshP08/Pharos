@@ -71,7 +71,7 @@ function callerHazard(text: string): string | null {
     /\btrapped\b/gi,
     /\b(?:cannot|can't|unable to) (?:get out|leave|escape|breathe)\b/gi,
     /\bno safe (?:way out|exit)\b/gi,
-    /\b(?:water|floodwater) (?:is |has been )?(?:rising (?:inside|in (?:my|our|the) (?:house|home|room))|coming (?:in|into (?:my|our|the) (?:house|home|room))|inside(?: (?:my|our|the) (?:house|home|room))?|coming up (?:the )?stairs)\b/gi,
+    /\b(?:water|floodwater) (?:is |has been )?(?:now )?(?:rising (?:inside|in (?:my|our|the) (?:house|home|room))|coming (?:in|into (?:my|our|the) (?:house|home|room))|inside(?: (?:my|our|the) (?:house|home|room))?|coming up(?: (?:the )?stairs|stairs))\b/gi,
     /\b(?:fire|smoke) (?:is )?(?:inside|in (?:my|our|the) (?:house|home|room)|near (?:my|our) (?:home|house))\b/gi,
     /\b(?:unconscious|seriously injured|serious injury|bleeding heavily|life[- ]threatening)\b/gi,
     /\b(?:i am|i'm|we are|we're|someone is) in (?:immediate )?danger\b/gi,
@@ -99,7 +99,7 @@ function safetyReport(text: string, prompt: Prompt): { value: Safety; evidence: 
   const directYes = safetyContext && (prompt === 'safe' ? firstNo : firstYes)
   const directNo = explicitSafe || (safetyContext && (prompt === 'safe' ? firstYes : firstNo))
   if ((danger || directYes) && directNo) return { value: 'unknown', evidence: null, reported: true, corrected: correction.corrected || changingSituation }
-  if (uncertain && (safetyContext || danger || /\b(?:danger|safe|trapped|water inside|breathe)\b/i.test(value))) return { value: 'unknown', evidence: null, reported: true, corrected: correction.corrected || changingSituation }
+  if (uncertain && (safetyContext || danger || /\b(?:danger|safe|trapped|breathe|(?:water|floodwater)\b.{0,45}\b(?:inside|rising|coming up))\b/i.test(value))) return { value: 'unknown', evidence: null, reported: true, corrected: correction.corrected || changingSituation }
   if (danger || directYes) return { value: 'yes', evidence: danger || value, reported: true, corrected: correction.corrected || changingSituation }
   if (directNo) return { value: 'no', evidence: null, reported: true, corrected: correction.corrected || changingSituation }
   return { value: 'unknown', evidence: null, reported: false, corrected: false }
@@ -140,7 +140,8 @@ function peopleReport(text: string, prompted: boolean): { value: number | null; 
   const value = tail.text
   const countContext = prompted || /\b(?:of us|people|persons|residents|household|family of|adults?|children|kids?)\b/i.test(value)
   if (!countContext) return { value: null, reported: false, corrected: false }
-  if (/\b(?:not sure|don't know|do not know|about|around|at least|maybe|roughly)\b/i.test(value)
+  if (/\b(?:not sure|don't know|do not know)\b/i.test(value)
+    || new RegExp(`\\b(?:about|around|at least|maybe|roughly)\\s+(?:there are\\s+)?${numberToken}\\b`, 'i').test(value)
     || new RegExp(`\\b${numberToken} (?:or|to) ${numberToken}\\b`, 'i').test(value)) return { value: null, reported: true, corrected: tail.corrected }
   const total = value.match(new RegExp(`\\b(${numberToken}) (?:of us|people|persons|residents)\\b`, 'i'))
     || value.match(new RegExp(`\\b(?:family|household|party) of (${numberToken})\\b`, 'i'))
@@ -205,7 +206,10 @@ export function deriveCallFacts(turns: readonly FactsTurn[]): CallFacts {
       const safety = safetyReport(fragment, prompt)
       if (safety.reported) {
         const rechecked = prompt === 'safety' || prompt === 'safe'
-        if (!safetyReported || safety.corrected || rechecked) {
+        // A later explicit worsening report is new evidence, not a static
+        // contradiction. Plain conflicting answers still need clarification.
+        const worsening = safety.value === 'yes' && /\b(?:now|getting worse|rising|has risen|coming up|since (?:my|our|the) last call)\b/i.test(fragment)
+        if (!safetyReported || safety.corrected || rechecked || worsening) {
           immediateDanger = safety.value
           immediateEvidence = originalEvidence(turn.text, safety.evidence)
         } else if (safety.value !== immediateDanger) {

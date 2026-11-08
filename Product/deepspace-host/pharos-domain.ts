@@ -72,9 +72,13 @@ export interface PharosCase {
   createdAt: string
   updatedAt: string
   synthetic: boolean
-  priorityOverride?: { previousPriority: Priority; reason: string; at: string }
+  priorityOverride?: { previousPriority: Priority; reason: string; at: string; supersededAt?: string }
   assignmentNeedsReview?: boolean
   followUpOwner?: string | null
+  latestPriority?: Priority
+  reassessmentRequired?: boolean
+  linkedCallCount?: number
+  history?: Array<{ id?: string; callId: string; at: string; kind: 'initial' | 'caller-update' | 'responder-review'; summary: string; previousPriority?: Priority; priority: Priority; reason: string; changedFields?: string[] }>
 }
 
 export interface CallSession {
@@ -94,6 +98,8 @@ export interface CallSession {
   transport?: 'sip' | 'webrtc'
   transcriptExpiredAt?: string
   deliveryFailed?: boolean
+  /** Internal keyed lookup, removed from every public response and at expiry. */
+  callerRef?: string
 }
 
 export interface ResidentAlert {

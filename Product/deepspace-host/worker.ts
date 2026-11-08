@@ -226,13 +226,19 @@ async function handleVoiceIngest(request: Request, env: Env, ctx: ExecutionConte
   if (!['call.started', 'consent', 'consent.revoked', 'turn', 'call.ended'].includes(event)) return responseJson({ error: 'Unsupported voice event' }, 400)
   let warningUrl: string | undefined
   let warningTokenHash: string | undefined
+  let callerRef: string | undefined
   if (event === 'call.started') {
     await callStore(env, 'seed')
     const warningToken = toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `guard:${callId}`))
     warningTokenHash = await hashToken(warningToken)
     warningUrl = new URL(`/guard.html#${warningToken}`, request.url).href
+    // Only provider-observed intake SIP metadata can enable short-lived lookup.
+    // The raw number is neither forwarded to storage nor returned to clients.
+    if (body.transport === 'sip' && body.purpose !== 'guard' && typeof body.callerNumber === 'string' && /^\+[1-9]\d{6,14}$/.test(body.callerNumber)) {
+      callerRef = toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `caller:${body.callerNumber}`))
+    }
   }
-  const result = await callStore(env, 'voice.event', { callId, event, purpose: body.purpose, transport: body.transport, consent: body.consent, role: body.role, text: body.text, sequence: body.sequence, deliveryFailed: body.deliveryFailed === true, warningTokenHash })
+  const result = await callStore(env, 'voice.event', { callId, event, purpose: body.purpose, transport: body.transport, callerRef, consent: body.consent, role: body.role, text: body.text, sequence: body.sequence, deliveryFailed: body.deliveryFailed === true, warningTokenHash })
   if (result.warning) ctx.waitUntil(deliverWarning(env, result.warning as import('./pharos-domain').ResidentAlert))
   return responseJson({ ...result, ...(warningUrl ? { warningUrl } : {}) }, event === 'call.started' || event === 'turn' ? 202 : 200)
 }

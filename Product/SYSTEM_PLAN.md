@@ -67,6 +67,21 @@ A signed-in responder can pre-enroll the test recipient before the call and prov
 
 Warnings distinguish app availability, provider acceptance, failure, and device-reported display. None proves the recipient read the warning or that a caller is a scammer. Advice is to pause and independently verify through an official contact.
 
+## Psychological grounding and detector boundaries
+
+The scam-warning input is the consented **transcript and requested behavior**, not a phone number, caller reputation, voice tone, accent, or inferred emotional state. The temporary consenting-caller allowlist limits test costs and access; it is not a scam rule. The keyed phone lookup supports help-case retrieval only and is not supplied to Pressure Trace.
+
+Research and consumer-protection sources checked on November 8, 2026:
+
+- [FTC: How To Avoid a Scam](https://consumer.ftc.gov/articles/how-avoid-scam) describes impersonated authority, immediate-action pressure, threatened consequences, keeping someone on a call to prevent checking, and demanded payment methods. It recommends independent verification and talking to someone trusted. This is consumer guidance, not validation of a transcript classifier.
+- [FTC: Spot and avoid FEMA impersonators](https://consumer.ftc.gov/consumer-alerts/2025/07/spot-avoid-fema-impersonators) states that FEMA does not charge for disaster assistance or inspections. This supports a specific FEMA-plus-fee warning; it must not become a claim that every disaster-related service or payment is fraudulent.
+- [Khadka, Ullah and Marroquin: Unmasking persuasion in phishing](https://doi.org/10.1108/ICS-12-2024-0321) (published online 2025; journal issue 2026) qualitatively codes 200 phishing emails from 2014–2023. It examines combinations of authority, distraction/scarcity, social proof, commitment/consistency, and reciprocation, among other categories. The evidence concerns selected phishing emails, not live disaster calls; tactic frequency does not establish causation, detection accuracy, or a person's susceptibility.
+- [Omer and Pöhn: Psychological factors across social-engineering types](https://arxiv.org/html/2608.25670v1) (2026) compares simulated channels including voice in a 12-person laboratory study. Responses are stated intentions, not losses in real scams. The authors explicitly limit generalizability because of the small sample, laboratory setting, and narrow scenarios. Its percentages must not become Pharos risk probabilities.
+
+Product interpretation: label observable cues—an official claim, short deadline, threatened loss, discouraging a second opinion, invoking a favor or earlier agreement, or claiming others complied—and quote the exact words. Use “may pressure” or “can discourage checking”; do not diagnose the caller or resident, assert intent, or say a tactic proves fraud. Reciprocity, commitment, and social proof can also occur in ordinary helpful conversations.
+
+Legitimate evacuation instructions can share urgency, authority, limited seats, and requests to stay connected. Review the requested action and anti-verification context rather than warning on these cues alone. “Stay on the line while I connect a dispatcher” needs different treatment from “stay on the line so you cannot call your bank.” Warnings should pause the risky payment, disclosure, or device-access action and offer independent verification without delaying immediate safety instructions. Maintain benign emergency, quoted-warning, negation, paraphrase, and speech-recognition-error controls; independently authored holdouts must remain separate from repaired regression examples. These sources ground explanations, not a validated detector or clinical assessment.
+
 ## Consent, retention, and access
 
 LiveKit must process audio to recognize the consent answer. Pharos stores no raw audio and accepts transcript turns only after clear consent. The agent explicitly disables its recording feature. Withdrawal stops collection, removes stored transcript/evidence/access and caller linkage, and can leave minimal previously consented help facts for human follow-up. This does not promise deletion from provider buffers or a recipient's device.

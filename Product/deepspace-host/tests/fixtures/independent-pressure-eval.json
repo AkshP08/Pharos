@@ -1,0 +1,431 @@
+{
+  "schemaVersion": 1,
+  "evaluation": "Independent agent-authored holdout, labels fixed before running the analyzer",
+  "evaluatedAt": "2026-11-08T06:39:17.459Z",
+  "engine": "analyzePressureText in pharos-pressure.ts",
+  "engineSha256": "cf45575ae3f7902cea67eb2551fa3f75d506fed5ae544e52625ee2968ab2996b",
+  "frozenInputSha256": "8369538337f57b64f5d29047d15ea72c11efb1b13e894429a6f82f2d329ca1b0",
+  "inputPath": "/tmp/pharos-independent-pressure-holdout-2026-11-08.json",
+  "scope": "Words and psychological pressure only. No caller identity, phone number, or provider reputation is evidence.",
+  "warningRule": "Expected warning means the utterance applies psychological pressure toward an unsafe payment, secrecy, credential disclosure, or loss of independent choice. Urgency alone, attributed scam warnings, and negated demands should not warn.",
+  "limitations": "Small synthetic holdout written by a separate QA agent, not a population accuracy estimate. The agent had prior knowledge of the product and a previous two-miss probe, but did not inspect or tune the current engine while creating this file.",
+  "totalCases": 28,
+  "expectedWarningCases": 14,
+  "expectedNonWarningCases": 14,
+  "confusionMatrix": {
+    "truePositive": 0,
+    "falsePositive": 2,
+    "trueNegative": 12,
+    "falseNegative": 14
+  },
+  "warningRecall": 0,
+  "falsePositiveRate": 0.14285714285714285,
+  "results": [
+    {
+      "id": "benign-evacuation",
+      "category": "real_emergency_urgency",
+      "expectedWarn": false,
+      "text": "The water is already at the porch. Please leave through the upstairs window now and wave a bright towel so the rescue boat can see you. Tell me how many people need help.",
+      "reason": "Immediate physical safety instructions and a head count; no manipulative financial or secret request.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-medical",
+      "category": "real_emergency_urgency",
+      "expectedWarn": false,
+      "text": "My father has stopped responding. Please send an ambulance immediately. We are at the north entrance of the library; I can stay on the line while you tell me what to do.",
+      "reason": "A caller urgently requests medical help and offers to stay available.",
+      "actualWarn": true,
+      "actualLevel": "medium",
+      "outcome": "falsePositive",
+      "actualSignals": [
+        {
+          "kind": "deadline",
+          "evidence": "immediately",
+          "psychology": "Time pressure",
+          "explanation": "A short deadline can reduce the opportunity to compare information or ask someone else. Genuine emergency instructions can also be urgent.",
+          "start": 59,
+          "end": 70
+        },
+        {
+          "kind": "isolation",
+          "evidence": "stay on the line",
+          "psychology": "Isolation from a second opinion",
+          "explanation": "Keeping the contact secret or preventing a separate call removes a useful chance to check the story with someone trusted.",
+          "start": 123,
+          "end": 139
+        }
+      ],
+      "confidence": "Limited wording evidence; not a fraud probability"
+    },
+    {
+      "id": "benign-published-fees",
+      "category": "agency_fee_information",
+      "expectedWarn": false,
+      "text": "The city charges a replacement permit fee after an inspection. You can check the published fee schedule yourself or visit the counter next week. There is no need to pay during this call.",
+      "reason": "General fee information encourages independent verification and expressly declines immediate payment.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-shelter-deposit",
+      "category": "agency_fee_information",
+      "expectedWarn": false,
+      "text": "A hotel may ask for a refundable room deposit. Compare the written terms before booking, and call the hotel's publicly listed desk if you want to confirm them. Our emergency shelter does not charge an entry fee.",
+      "reason": "Informational discussion of legitimate fees without a demand or pressure.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-quoted-bank-warning",
+      "category": "quoted_warning",
+      "expectedWarn": false,
+      "text": "Our scam-prevention poster says: 'A criminal may tell you to read your banking code aloud before a timer runs out.' Treat that instruction as a warning sign and end the call.",
+      "reason": "The unsafe instruction is explicitly attributed to criminals and discouraged.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-reporting-threat",
+      "category": "reported_scam",
+      "expectedWarn": false,
+      "text": "The last caller told me, 'Keep this between us and send a voucher today or we will cancel your rescue.' I refused and hung up. I am reporting what they said, not asking anyone to do it.",
+      "reason": "A victim reports and rejects a prior demand rather than making it.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [
+        {
+          "kind": "threat",
+          "evidence": "or we will cancel",
+          "psychology": "Loss or punishment framing",
+          "explanation": "A threatened loss can pressure someone to comply. The transcript cannot establish whether the stated consequence is real.",
+          "start": 72,
+          "end": 89
+        }
+      ],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-family-verification",
+      "category": "safe_verification",
+      "expectedWarn": false,
+      "text": "If you are unsure whether that voice is your brother, hang up and call him using the number already saved in your contacts. Ask about a memory you share; do not send money based on this call alone.",
+      "reason": "Independent verification advice, with an explicit warning against payment.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-unhurried-consent",
+      "category": "negated_pressure",
+      "expectedWarn": false,
+      "text": "You do not have to decide now, and you can discuss the repair quote with anyone you trust. Nothing about your relief application depends on agreeing to this contractor today.",
+      "reason": "Explicitly preserves time, outside consultation, and freedom of choice.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-blood-transport",
+      "category": "real_emergency_urgency",
+      "expectedWarn": false,
+      "text": "The clinic urgently needs the cooler delivered before six because the medicine must stay cold. Can you bring it to the marked receiving entrance? If you cannot, please tell us so another volunteer can go.",
+      "reason": "A practical time constraint with an accepted option to decline.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-pharmacy-copay",
+      "category": "agency_fee_information",
+      "expectedWarn": false,
+      "text": "There may be a prescription copay depending on your insurance. The pharmacy can explain the exact amount when you collect the medicine. We cannot take card details or payment on this volunteer helpline.",
+      "reason": "Explains a possible normal charge while refusing payment details.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-negated-voucher",
+      "category": "negated_demand",
+      "expectedWarn": false,
+      "text": "Do not buy a prepaid voucher or read its digits to anyone claiming to speed up disaster aid. You will not lose your place for refusing. Speak to the aid office through its official public contact.",
+      "reason": "Direct negation of the unsafe action and reassurance against the threatened consequence.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [
+        {
+          "kind": "threat",
+          "evidence": "lose your place",
+          "psychology": "Loss or punishment framing",
+          "explanation": "A threatened loss can pressure someone to comply. The transcript cannot establish whether the stated consequence is real.",
+          "start": 106,
+          "end": 121
+        }
+      ],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-pantry-deadline",
+      "category": "legitimate_deadline",
+      "expectedWarn": false,
+      "text": "The pantry closes in twenty minutes. Please come before then if you need dinner tonight. If you cannot make it, we can arrange a bag with tomorrow's delivery; you do not need identification or payment.",
+      "reason": "Ordinary service hours, a fallback option, and no exploitative demand.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "benign-training-script",
+      "category": "quoted_warning",
+      "expectedWarn": false,
+      "text": "In tomorrow's training we will show the example 'Pay a processing charge right now and tell nobody.' Explain why the fake authority, secrecy, and deadline are manipulation tactics. Volunteers must never use that script on residents.",
+      "reason": "The suspicious language is an explicitly prohibited training example.",
+      "actualWarn": true,
+      "actualLevel": "high",
+      "outcome": "falsePositive",
+      "actualSignals": [
+        {
+          "kind": "deadline",
+          "evidence": "right now",
+          "psychology": "Time pressure",
+          "explanation": "A short deadline can reduce the opportunity to compare information or ask someone else. Genuine emergency instructions can also be urgent.",
+          "start": 73,
+          "end": 82
+        },
+        {
+          "kind": "money_or_secret",
+          "evidence": "Pay a processing charge",
+          "psychology": "Risky requested action",
+          "explanation": "This wording involves a payment method or sensitive account information. Pause that action and verify the request through an independently found contact.",
+          "start": 49,
+          "end": 72
+        }
+      ],
+      "confidence": "Combined wording evidence; not a fraud probability"
+    },
+    {
+      "id": "benign-bank-policy",
+      "category": "negated_demand",
+      "expectedWarn": false,
+      "text": "We never ask for your password or the login number from a text message. If someone asks for those, do not share them. Please end that conversation and independently contact your bank.",
+      "reason": "A safety policy negates credential requests and directs independent contact.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "trueNegative",
+      "actualSignals": [
+        {
+          "kind": "authority",
+          "evidence": "your bank",
+          "psychology": "Authority cue",
+          "explanation": "An official-sounding name can encourage trust. This phrase alone does not establish who is calling.",
+          "start": 173,
+          "end": 182
+        }
+      ],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-relief-authority",
+      "category": "authority_deadline_payment",
+      "expectedWarn": true,
+      "text": "I approve county relief claims. Yours will be closed at the end of this call unless you cover the verification charge through the wallet link I just sent. There is no appeal once I mark it abandoned.",
+      "reason": "Claimed official authority and an irreversible deadline pressure an off-channel payment.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [
+        {
+          "kind": "authority",
+          "evidence": "county",
+          "psychology": "Authority cue",
+          "explanation": "An official-sounding name can encourage trust. This phrase alone does not establish who is calling.",
+          "start": 10,
+          "end": 16
+        }
+      ],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-bank-authentication",
+      "category": "authority_credential_pretext",
+      "expectedWarn": true,
+      "text": "This is the bank's recovery desk. To freeze the thief's access, read out the temporary sign-in digits that just arrived on your phone. If we pause to call someone else, the thief will finish moving the balance.",
+      "reason": "A protective pretext and time pressure seek an authentication secret while blocking verification.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-rescue-isolation",
+      "category": "isolation_credential_pretext",
+      "expectedWarn": true,
+      "text": "I can keep your evacuation booking active, but the texted access number is needed before dispatch changes shifts. Do not ask your daughter about this; too many people checking will get the booking rejected.",
+      "reason": "Threatened loss of help and isolation push disclosure of an access secret.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-prepaid-relief",
+      "category": "scarcity_payment_pretext",
+      "expectedWarn": true,
+      "text": "There are only two relief slots left. Load two hundred dollars onto a store voucher and tell me the redemption details so I can reserve one in your name. You get it all back after the grant clears.",
+      "reason": "Scarcity and a refund story pressure an irreversible prepaid payment.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-landlord-isolation",
+      "category": "isolation_housing_threat",
+      "expectedWarn": true,
+      "text": "You can stay in the temporary apartment only if you send the extra deposit to my personal account tonight. Keep the housing counselor out of it; if she starts asking questions, I will give the room to another family.",
+      "reason": "Housing insecurity and isolation coerce a private payment.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-reciprocity-savings",
+      "category": "slow_trust_reciprocity",
+      "expectedWarn": true,
+      "text": "After all the evenings I have spent listening to you, I thought we had something special. Put your savings into the account I showed you as a sign that you believe in us. Bringing your son into our plans would tell me you never trusted me.",
+      "reason": "A built relationship, guilt, and isolation seek the resident's savings without overt deadline buzzwords.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-small-then-large",
+      "category": "commitment_escalation",
+      "expectedWarn": true,
+      "text": "The small transfer last week proved we work well together. Taking it back now would waste everything we have built. Move the rest of the balance to the same place and let us finish this between ourselves.",
+      "reason": "Prior commitment and sunk-cost pressure escalate a private transfer.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-exclusivity",
+      "category": "slow_trust_dependence",
+      "expectedWarn": true,
+      "text": "I am the one person who has stayed with you through all of this. Your friends only confuse you. Let me handle your pension by adding me as the person who can move it; it will hurt if you need their permission first.",
+      "reason": "Emotional dependence and isolation pressure surrender of financial control.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-shame-silence",
+      "category": "shame_financial_coercion",
+      "expectedWarn": true,
+      "text": "Imagine how embarrassed your church group would be to hear that you would not help after everyone helped you. Sell that little emergency fund and put it into my project. We can spare them the details if you cooperate.",
+      "reason": "Social shame and threatened disclosure coerce use of emergency savings.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-protective-holding",
+      "category": "protective_financial_pretext",
+      "expectedWarn": true,
+      "text": "The compromised branch must not hear about our investigation. Empty that account into the holding destination on your screen while I supervise. Questioning the procedure will make it harder for us to protect what is yours.",
+      "reason": "A safety pretext and suppression of questions pressure moving all funds.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-volunteer-reciprocity",
+      "category": "reciprocity_payment",
+      "expectedWarn": true,
+      "text": "Our team worked all night to find your mother. The least you can do is cover our fuel through this payment request before we give you the pickup point. A grateful family would not make the rescuers wait.",
+      "reason": "Guilt and withholding safety information pressure payment to alleged rescuers.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-community-proof",
+      "category": "social_proof_credential",
+      "expectedWarn": true,
+      "text": "Every other household on your street has completed this relief check. You are the only one slowing the block down. Tell me the private phrase you use to enter online banking so I can mark your home complete too.",
+      "reason": "Conformity pressure and aid pretext seek a banking credential.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-family-guilt",
+      "category": "emotional_blackmail_payment",
+      "expectedWarn": true,
+      "text": "If you really cared whether your sister sleeps outside, you would send the room money to me without another discussion. Go ahead and check with her if you want, but I will remember that you chose suspicion over family.",
+      "reason": "Family guilt punishes verification and pressures a private payment.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    },
+    {
+      "id": "risky-reputation-threat",
+      "category": "coercion_privacy_threat",
+      "expectedWarn": true,
+      "text": "We can keep those private pictures between us. Open the payment page and complete what it asks, and nobody at your workplace has to learn about them. Think carefully before you involve anyone else.",
+      "reason": "Threatened exposure and isolation coerce payment without explicit time or authority terms.",
+      "actualWarn": false,
+      "actualLevel": "low",
+      "outcome": "falseNegative",
+      "actualSignals": [],
+      "confidence": "Insufficient evidence to assess safety"
+    }
+  ]
+}

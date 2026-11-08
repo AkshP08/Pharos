@@ -219,3 +219,26 @@ Append a dated note after each meaningful implementation session. Include what c
 - Visually reviewed Beacon, switched to Flare, opened Pharos Guide, and tried the “Check a warning” topic. The live title/branding, resident intake preview, synthetic warning label, separate safety check, and fixed-answer Guide appeared as intended.
 - Screenshot checkpoints were shown inline during this session. They are not saved as image files in the project; the screenshot tool provides transient images only. No synthetic form was submitted, no test message was sent, and no Photon resource was provisioned.
 - Current gate remains external setup: no local `Product/.env`, Photon line/webhook/voice route, approved T-Mobile/State Farm integration materials, LiveKit project, persistent store, responder login, or live alert source.
+
+## 2026-11-07 7:13 PM CST — Corrected Pharos to a voice-first intake
+
+### User correction and product change
+- The user pointed out that a resident in an emergency should not have to navigate and type through a web form. That was right: the previous UI over-emphasized the website form and incorrectly called Voice a stretch path.
+- Flare is now explicitly **phone-call first**. The text form is labeled as a backup, not the main intake path.
+- Added a fictional phone-call preview with a short automated-agent disclosure and consent, immediate-safety check, landmark/location, most urgent help/time-sensitive need, a read-back, and explicit caller confirmation before the request would be sent. It is a scripted preview only: no actual call or microphone use.
+- Beacon remains the responder destination for a protected, confirmed structured request. Unknown answers remain follow-up; the voice agent must not classify silence or distress as low priority, end a call on a scam score, or substitute a guess for a self-report.
+- Added a real animated tiny Pharaoh mascot to Pharos Guide: gentle bob, blink, and pulsing lantern, with reduced-motion support.
+
+### Photon path correction
+- Checked Photon 2.0's current official material. Its Oct. 15 announcement documents inbound/outbound voice over SIP and links its cookbooks; the Beta Cookbooks page specifically says its LiveKit cookbook connects Photon calls to LiveKit rooms with SIP trunks and optional agents.
+- This is the concrete call path to build: **caller → Photon SIP → LiveKit voice agent/STT → structured confirmed request → Beacon**. The previous framing leaned too heavily on older stable `spectrum-ts` message docs and failed to treat phone calling as the product's core. The current Photon 2.0 beta API uses `PHOTON_PROJECT_ID` + `PHOTON_API_KEY`; legacy `spectrum-ts` still has its own Project Secret. Updated `.env.example` and Photon setup notes to distinguish them.
+- A content-based scam flag may run alongside the intake, but it must quote the risky words, continue helping the caller, and send the flag to a separate human-review lane. It must not infer fraud from urgency, emotion, accent, hesitation, or persistence. This hotline can only analyze audio routed through Pharos; it cannot inspect someone's unrelated native phone calls.
+
+### Current state and open setup
+- Photon-to-LiveKit is now the primary integration to attempt, but still needs a voice line/route, LiveKit project, and consenting end-to-end test. No line has been provisioned and the previous simulated-data choice remains in force until the account owner explicitly changes it for a paid setup step.
+- `npm run build` completed. Wrangler again printed a non-fatal local `EPERM` while writing a debug log. It reported the ignored local DeepSpace `.dev.vars`; no values were read or printed. The generated public asset tree contains no `.dev.vars` file.
+- The updated demo awaits redeploy and visual review. Capture the animated mascot and call-first Flare screenshots after publishing; screenshots will be displayed inline in the progress conversation.
+
+### References checked
+- Photon [2.0 announcement](https://photon.codes/blog/introducing-photon-2.0) and [Beta Cookbooks](https://photon.codes/docs/beta/cookbooks).
+- LiveKit [inbound-call workflow](https://docs.livekit.io/telephony/accepting-calls/workflow-setup/) and [SIP inbound trunk](https://docs.livekit.io/telephony/accepting-calls/inbound-trunk/).

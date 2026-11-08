@@ -64,6 +64,19 @@ function setAudience(audience) {
 document.querySelector('#flareModeButton').addEventListener('click', () => setAudience('flare'));
 document.querySelector('#beaconModeButton').addEventListener('click', () => setAudience('beacon'));
 
+document.querySelector('#callDemoButton').addEventListener('click', () => {
+  const panel = document.querySelector('#callPreview');
+  const opening = panel.classList.contains('hidden');
+  panel.classList.toggle('hidden', !opening);
+  document.querySelector('#callDemoButton').innerHTML = opening ? 'Hide sample call <span>↑</span>' : 'Preview a sample call <span>→</span>';
+  if (opening) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
+document.querySelector('#closeCallPreview').addEventListener('click', () => {
+  document.querySelector('#callPreview').classList.add('hidden');
+  document.querySelector('#callDemoButton').innerHTML = 'Preview a sample call <span>→</span>';
+  document.querySelector('#callDemoButton').focus();
+});
+
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add('show');
@@ -227,10 +240,10 @@ document.querySelector('#helpRequestForm').addEventListener('submit', (event) =>
 });
 
 const guideAnswers = [
-  { match: /help|request|flare|submit/i, answer: 'Flare is the resident demo. Share only what is needed: immediate safety, a nearby location or landmark, number of people, and requested help. This prototype only creates a local preview; it does not send a request. If someone is in immediate danger, contact the local emergency number.' },
+  { match: /help|request|flare|submit|call|phone/i, answer: 'Pharos is designed around a phone call because someone in a disaster may not have time to use a website. The voice agent should ask first about immediate danger, then a nearby location, then the most urgent help needed, and read the summary back. The live phone line is not connected in this demo. The short form is only a backup preview; it does not send a request.' },
   { match: /warning|real|scam|message|verify/i, answer: 'This demo cannot verify a sender or check live emergency alerts. It can point out wording such as payment demands, secrecy, or rushed deadlines. Don’t use a suspicious message’s links or phone numbers; verify through an official source you find independently.' },
   { match: /beacon|responder|triage|queue|priority/i, answer: 'Beacon is the responder demo. It organizes reported needs using stated safety facts, keeps unknown details visible for follow-up, and shows suspicious contacts separately from help requests. A human responder reviews the queue; the demo does not dispatch anyone.' },
-  { match: /voice|call|photon|transcript/i, answer: 'Photon is not connected to live calls in this demo. A future voice path needs a supported SIP route, a speech-to-text service, consent and retention rules, and a server-side connection. A transcript could be checked for risky requests, but it cannot prove a caller is a scammer.' },
+  { match: /voice|photon|transcript/i, answer: 'The intended live path is a phone call: Photon routes the call over SIP to a LiveKit voice agent, which can transcribe speech and collect a short structured request for Beacon. That connection is not configured yet. Transcript checks can flag specific risky wording for a human; they cannot prove caller identity or intent.' },
   { match: /data|private|store|send/i, answer: 'This prototype uses fictional examples. Flare request previews and message checks stay in this page and are not sent or saved. Please do not enter real names, contact details, health information, or emergency details.' },
 ];
 

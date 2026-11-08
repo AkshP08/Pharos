@@ -58,17 +58,45 @@
         <section id="flareView" class="audience-view flare-view" hidden aria-labelledby="flareTitle">
           <div class="flare-hero">
             <div class="eyebrow"><span class="eyebrow-line"></span>PHAROS FLARE <span class="eyebrow-sep">/</span> RESIDENT SUPPORT</div>
-            <h1 id="flareTitle">A clear way to ask<br class="mobile-break" /> for help.</h1>
-            <p class="subhead">Share what is happening in a few steps. Your report stays on this demo page; it is not sent to responders.</p>
+            <h1 id="flareTitle">Call for help.<br class="mobile-break" /> Keep it simple.</h1>
+            <p class="subhead">In a disaster, you shouldn’t have to navigate a website. Pharos is designed around a short phone call; this demo’s phone line is not connected yet.</p>
           </div>
+          <section class="voice-first-panel" aria-labelledby="voiceFirstTitle">
+            <div class="voice-phone-mark" aria-hidden="true">☎</div>
+            <div class="voice-first-copy">
+              <div class="panel-kicker">PRIMARY HELP PATH · PHONE CALL</div>
+              <h2 id="voiceFirstTitle">Tell Pharos what’s happening.</h2>
+              <p>When the line is live, you can speak naturally or use the keypad. The voice agent will ask only what responders need to start: are you in immediate danger, where are you, and what help is most urgent?</p>
+              <div class="voice-flow-chips"><span>01 · Safety</span><span>02 · Location</span><span>03 · Help needed</span><span>04 · Confirm</span></div>
+              <div class="voice-actions"><button class="button button-primary" id="callDemoButton" type="button">Preview a sample call <span>→</span></button><span class="voice-line-status"><i></i> Hotline not connected yet</span></div>
+              <p class="voice-preview-note">Sample flow only · no call is placed and no microphone is used.</p>
+            </div>
+          </section>
+          <section id="callPreview" class="voice-call-preview hidden" aria-label="Sample Pharos call flow" aria-live="polite">
+            <div class="call-preview-title"><span class="live-wave" aria-hidden="true">)))</span><div><strong>Sample phone conversation</strong><small>Fictional example · call audio is not recorded</small></div><button type="button" id="closeCallPreview" aria-label="Close sample call">×</button></div>
+            <div class="call-transcript">
+              <p><strong>Pharos:</strong> “You’ve reached the automated Pharos intake helper. I can transcribe a few answers to prepare a request for a human responder. Do you want to continue?”</p>
+              <p><strong>Caller:</strong> “Yes.”</p>
+              <p><strong>Pharos:</strong> “First, are you in immediate danger? You can say yes, no, or not sure.”</p>
+              <p><strong>Caller:</strong> “Yes. Water is coming into the house.”</p>
+              <p><strong>Pharos:</strong> “What nearby address or landmark can responders use?”</p>
+              <p><strong>Caller:</strong> “Near the Riverbend footbridge.”</p>
+              <p><strong>Pharos:</strong> “What help do you need most right now? Is there a time-sensitive need I should include?”</p>
+              <p><strong>Caller:</strong> “A safe way out. There are four of us, and one person needs powered oxygen.”</p>
+              <p><strong>Pharos:</strong> “I heard rising water, the Riverbend footbridge, four people, and a powered medical need. Is that right?”</p>
+              <p><strong>Caller:</strong> “Yes, that’s right.”</p>
+              <p><strong>Pharos:</strong> “Okay. I’ll send this as a request for a human responder to review.”</p>
+            </div>
+            <div class="call-preview-note"><strong>How it should triage:</strong> immediate danger and reported time-sensitive needs are visible with the words that support the order. If the caller can’t answer, the field stays unknown for follow-up; it does not lower their place or end the call.</div>
+          </section>
           <div class="alert-banner">
             <span class="alert-mark">!</span><div><strong>Sample incident notice · synthetic demo</strong><p>Trinity River water levels are rising in this fictional scenario. This is not a live warning. Check official local emergency channels for current instructions.</p></div>
             <span class="demo-label">NOT LIVE</span>
           </div>
           <div class="flare-grid">
             <section class="panel intake-panel" aria-labelledby="intakeTitle">
-              <div class="panel-head"><div><div class="panel-kicker">HELP REQUEST · DEMO ONLY</div><h2 id="intakeTitle">What do you need right now?</h2></div></div>
-              <p class="panel-intro">Answer what you can. “Not sure” is okay, and missing details will never make a request disappear.</p>
+              <div class="panel-head"><div><div class="panel-kicker">BACKUP PATH · TEXT FORM DEMO</div><h2 id="intakeTitle">Can’t call? Share a short request.</h2></div></div>
+              <p class="panel-intro">The real product is voice-first. This local-only form is a backup for someone who can’t make a call; “not sure” is okay, and missing details must stay visible for follow-up.</p>
               <form id="helpRequestForm">
                 <label for="safetyStatus">Is anyone in immediate danger?</label>
                 <select id="safetyStatus" name="safetyStatus"><option value="not-sure">Not sure / prefer to explain</option><option value="yes">Yes</option><option value="no">No</option></select>
@@ -217,12 +245,12 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <section class="guide-widget" id="guideWidget" aria-label="Pharos Guide">
       <div class="guide-panel" id="guidePanel" hidden>
-        <div class="guide-head"><span class="guide-avatar" aria-hidden="true">👑</span><div><strong>Pharos Guide</strong><small>Demo helper · no live data</small></div><button id="guideClose" aria-label="Close guide">×</button></div>
+        <div class="guide-head"><span class="guide-avatar" aria-hidden="true"><svg class="pharaoh-mascot" viewBox="0 0 64 64"><g class="mascot-float"><path class="mascot-cloak" d="M12 58c1-10 8-16 20-16s19 6 20 16H12Z"/><path class="mascot-collar" d="m18 49 14 5 14-5-5 12H23l-5-12Z"/><path class="mascot-headdress" d="M11 16 21 6h22l10 10v20l-8 8H19l-8-8V16Z"/><path class="mascot-stripe stripe-one" d="m16 11 7-5h6L16 20v-9Z"/><path class="mascot-stripe stripe-two" d="M29 6h6L15 27v-7L29 6Z"/><path class="mascot-stripe stripe-three" d="M42 8v7L20 37l-4-4L36 8h6Z"/><path class="mascot-face" d="M21 20h22v17c0 8-5 12-11 12s-11-4-11-12V20Z"/><path class="mascot-brow" d="m24 29 6-1m4 0 6 1"/><ellipse class="mascot-eye" cx="28" cy="32" rx="1.5" ry="1.8"/><ellipse class="mascot-eye" cx="38" cy="32" rx="1.5" ry="1.8"/><path class="mascot-smile" d="M28 40q4 3 8 0"/><path class="mascot-uraeus" d="M28 9q4-7 8 0l-2 5h-4l-2-5Z"/><path class="mascot-lantern" d="M47 39h9v12h-9z"/><path class="mascot-lantern-cap" d="m46 39 5-5 5 5h-10Z"/><path class="mascot-light" d="M56 41h7M57 46h6M56 51h7"/></g></svg></span><div><strong>Pharos Guide</strong><small>Voice-first demo helper · no live data</small></div><button id="guideClose" aria-label="Close guide">×</button></div>
         <div class="guide-messages" id="guideMessages" aria-live="polite"><p class="guide-bubble guide-bot">Hi, I’m the Pharos Guide. I can explain this demo and share general message-safety tips. I can’t send help, verify live warnings, or give emergency instructions.</p></div>
         <div class="guide-topics"><button type="button" data-question="How do I ask for help?">Ask for help</button><button type="button" data-question="Is this warning real?">Check a warning</button><button type="button" data-question="What does Beacon do?">About Beacon</button></div>
         <form id="guideForm" class="guide-form"><label class="sr-only" for="guideInput">Ask Pharos Guide</label><input id="guideInput" maxlength="240" autocomplete="off" placeholder="Ask a demo question" /><button aria-label="Send question">↑</button></form>
       </div>
-      <button class="guide-launcher" id="guideLauncher" aria-expanded="false" aria-controls="guidePanel"><span class="guide-launcher-face" aria-hidden="true">👑</span><span>Ask Pharos Guide</span></button>
+      <button class="guide-launcher" id="guideLauncher" aria-expanded="false" aria-controls="guidePanel"><span class="guide-launcher-face" aria-hidden="true"><svg class="pharaoh-mascot" viewBox="0 0 64 64"><g class="mascot-float"><path class="mascot-cloak" d="M12 58c1-10 8-16 20-16s19 6 20 16H12Z"/><path class="mascot-collar" d="m18 49 14 5 14-5-5 12H23l-5-12Z"/><path class="mascot-headdress" d="M11 16 21 6h22l10 10v20l-8 8H19l-8-8V16Z"/><path class="mascot-stripe stripe-one" d="m16 11 7-5h6L16 20v-9Z"/><path class="mascot-stripe stripe-two" d="M29 6h6L15 27v-7L29 6Z"/><path class="mascot-stripe stripe-three" d="M42 8v7L20 37l-4-4L36 8h6Z"/><path class="mascot-face" d="M21 20h22v17c0 8-5 12-11 12s-11-4-11-12V20Z"/><path class="mascot-brow" d="m24 29 6-1m4 0 6 1"/><ellipse class="mascot-eye" cx="28" cy="32" rx="1.5" ry="1.8"/><ellipse class="mascot-eye" cx="38" cy="32" rx="1.5" ry="1.8"/><path class="mascot-smile" d="M28 40q4 3 8 0"/><path class="mascot-uraeus" d="M28 9q4-7 8 0l-2 5h-4l-2-5Z"/><path class="mascot-lantern" d="M47 39h9v12h-9z"/><path class="mascot-lantern-cap" d="m46 39 5-5 5 5h-10Z"/><path class="mascot-light" d="M56 41h7M57 46h6M56 51h7"/></g></svg></span><span>Ask Pharos Guide</span></button>
     </section>
     <script src="app.js"></script>
   </body>

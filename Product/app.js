@@ -1155,7 +1155,7 @@ $('#responderLoginForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   $('#loginError').textContent = '';
   try {
-    await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ password: $('#responderPasswordInput').value }) });
+    await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: $('#responderEmailInput').value.trim(), password: $('#responderPasswordInput').value }) });
     $('#responderPasswordInput').value = '';
     await loadOverview();
   } catch (error) { $('#loginError').textContent = error.message; }

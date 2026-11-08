@@ -1,3 +1,4 @@
+import { accountEmail, demoEmail, demoPasswordRecord, passwordRecord, passwordMatches } from './pharos-accounts'
 import { analyzeCall, analyzeScamText, orderedCases, parseTranscriptTurns, transcriptText, type CallSession, type PharosCase, type Responder, type ScamReview, type TranscriptTurn } from './pharos-domain'
 import { PharosStore } from './pharos-store'
 import { sendWarningSms } from './pharos-notify'
@@ -295,13 +296,27 @@ export default {
       return responseJson({ required, authenticated: !required || role !== null, role, mode: required ? 'secured' : 'demo-only' })
     }
     if (pathname === '/api/health' && method === 'GET') return responseJson({ ok: true, mode: configuredResponderAuth(env) ? 'secured' : 'demo-only', persistentStorage: 'sqlite-durable-object', voiceAgentCode: true, voiceRoute: voiceReady(env) ? 'ready' : 'not-configured', transcriptRetentionHours: transcriptRetentionHours(env) })
+    if ((pathname === '/signup' || pathname === '/signup.html') && method === 'GET') return env.ASSETS.fetch(new Request(new URL('/signup.html',request.url),request))
+    if (pathname === '/api/auth/register' && method === 'POST') {
+      if (!configuredResponderAuth(env)) return responseJson({error:'Account registration is unavailable.'},503)
+      try {
+        const body = await readBody(request)
+        const email = accountEmail(body.email)
+        if (email === demoEmail) return responseJson({error:'This demo account already exists. Sign in instead.'},409)
+        const record = await passwordRecord(body.password)
+        await callStore(env,'account.create',{email,...record})
+        return responseJson({created:true,email},201)
+      } catch(error) { return apiError(error,(error as {status?:number}).status || 400) }
+    }
     if (pathname === '/api/auth/login' && method === 'POST') {
       if (!configuredResponderAuth(env)) return responseJson({ error: 'Responder sign-in is not configured in demo-only mode.' }, 409)
       try {
         const body = await readBody(request)
         const password = String(body.password || '')
-        const responderMatch = await verifySecret(password, env.PHAROS_RESPONDER_PASSWORD)
-        const coordinatorMatch = !responderMatch && await verifySecret(password, env.PHAROS_COORDINATOR_PASSWORD)
+        const email = body.email === undefined ? null : accountEmail(body.email)
+        const record = email === demoEmail ? demoPasswordRecord : email ? (await callStore(env,'account.get',{email})).account as {salt:string;hash:string} | null : null
+        const responderMatch = email ? await passwordMatches(password,record) : await verifySecret(password, env.PHAROS_RESPONDER_PASSWORD)
+        const coordinatorMatch = !email && !responderMatch && await verifySecret(password, env.PHAROS_COORDINATOR_PASSWORD)
         if (!responderMatch && !coordinatorMatch) return responseJson({ error: 'Sign-in failed.' }, 401)
         const role = coordinatorMatch ? 'coordinator' : 'responder'
         const payload = toBase64Url(new TextEncoder().encode(JSON.stringify({ role, exp: Date.now() + 8 * 60 * 60 * 1000 })))

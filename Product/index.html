@@ -289,9 +289,12 @@
       <form id="responderLoginForm" class="login-card">
         <div class="eyebrow"><span class="eyebrow-line"></span>PHAROS BEACON</div>
         <h2 id="loginTitle">Responder sign-in</h2>
-        <p>This workspace contains call transcripts and response requests. Sign in with the responder or coordinator password.</p>
+        <p>This workspace contains call transcripts and response requests. Sign in with your responder email and password.</p>
+        <label for="responderEmailInput">Email</label><input id="responderEmailInput" type="email" autocomplete="username" placeholder="responder@pharos.com" required />
         <label for="responderPasswordInput">Password</label><input id="responderPasswordInput" type="password" autocomplete="current-password" required />
         <button class="button button-primary" type="submit">Sign in <span>→</span></button>
+        <p><a href="/signup">Create an account</a></p>
+        <p class="demo-login-hint">Demo: responder@pharos.com · Password: 1234responder</p>
         <div class="login-error" id="loginError" aria-live="polite"></div>
       </form>
     </section>

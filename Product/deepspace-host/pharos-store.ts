@@ -40,6 +40,7 @@ export class PharosStore extends DurableObject {
     const hours = Number((env as { PHAROS_TRANSCRIPT_RETENTION_HOURS?: string })?.PHAROS_TRANSCRIPT_RETENTION_HOURS || 24)
     this.retentionMs = (Number.isFinite(hours) ? Math.max(1, Math.min(24, hours)) : 24) * 3_600_000
     this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS responder_accounts (email TEXT PRIMARY KEY, salt TEXT NOT NULL, hash TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS incidents (
         id TEXT PRIMARY KEY,
         status TEXT NOT NULL,
@@ -610,6 +611,16 @@ export class PharosStore extends DurableObject {
 
     try {
       switch (command.action) {
+        case 'account.create': {
+          const email = String(command.email)
+          if (this.rows('SELECT email FROM responder_accounts WHERE email = ?', email).length) return json({error:'An account with this email already exists.'},409)
+          this.sql.exec('INSERT INTO responder_accounts VALUES (?, ?, ?, ?)',email,String(command.salt),String(command.hash),new Date().toISOString())
+          return json({created:true})
+        }
+        case 'account.get': {
+          const account = this.rows('SELECT salt, hash FROM responder_accounts WHERE email = ?',String(command.email))[0] || null
+          return json({account})
+        }
         case 'voice.event': {
           const result = this.ctx.storage.transactionSync(() => this.voiceEvent(command))
           await this.scheduleExpiry()

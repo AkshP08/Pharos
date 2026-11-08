@@ -46,3 +46,13 @@ Product/deepspace-host/public/guard.webmanifest
 Product/deepspace-host/public/guard-icon.svg
 Product/.qa-watch/
 Product/deepspace-host/public/build.json
+
+# Generated product documentation assets
+Product/deepspace-host/public/manual.html
+Product/deepspace-host/public/tests.html
+Product/deepspace-host/public/design.html
+Product/deepspace-host/public/demo.html
+Product/deepspace-host/public/docs.css
+Product/deepspace-host/public/pharos-demo.mp4
+Product/deepspace-host/public/pharos-demo.vtt
+Product/deepspace-host/public/demo-poster.jpg

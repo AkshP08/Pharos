@@ -1,0 +1,27 @@
+{
+  "name": "signalbridge-deepspace",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.15.0 <23 || >=24 <25 || >=26 <27",
+    "npm": ">=11.6.0"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "deepspace dev start",
+    "build": "node sync-site.mjs && vite build",
+    "login": "deepspace auth login",
+    "deploy": "deepspace deploy",
+    "undeploy": "deepspace app undeploy"
+  },
+  "dependencies": {
+    "deepspace": "0.43.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.33.0",
+    "@cloudflare/workers-types": "^5.20260708.1",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.0",
+    "wrangler": "^4.79.0"
+  },
+  "private": true
+}

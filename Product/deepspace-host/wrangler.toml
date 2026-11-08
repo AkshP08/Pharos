@@ -1,0 +1,18 @@
+name = "signalbridge-hackutd-2026"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat", "assets_navigation_has_no_effect"]
+main = "worker.ts"
+
+[assets]
+directory = "dist"
+binding = "ASSETS"
+not_found_handling = "none"
+run_worker_first = ["/api/*", "/_deepspace/*", "/llms.txt", "/llms-full.txt", "/.well-known/mcp", "/.well-known/mcp.json", "/.well-known/mcp/*"]
+
+[vars]
+DEEPSPACE_APP_ID = "app_01M6W882E96HE85E815QZECT7X"
+APP_NAME = "signalbridge-hackutd-2026"
+
+[dev]
+port = 8780
+inspector_port = 9237

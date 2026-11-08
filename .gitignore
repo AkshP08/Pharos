@@ -1,0 +1,26 @@
+# Local secrets and configuration
+.env
+.env.*
+!.env.example
+Product/.env
+Product/deepspace-host/index.html
+Product/deepspace-host/public/app.js
+Product/deepspace-host/public/styles.css
+Product/deepspace-host/public/about.html
+
+# Local development artifacts
+node_modules/
+.DS_Store
+
+# DeepSpace / Vite local artifacts and credentials
+dist/
+.vite/
+.wrangler/
+.wrangler.deepspace.*.toml
+.dev.vars
+.dev.vars.*
+.deepspace/
+.worker-bundle.js
+coverage/
+test-results/
+playwright-report/

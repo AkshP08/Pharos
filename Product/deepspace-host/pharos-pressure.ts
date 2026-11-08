@@ -58,6 +58,7 @@ const rules: Rule[] = [
     patterns: [
       /\b(?:act now|right now|immediately|urgent|before (?:it is|it['’]s) too late|today only|only today)\b/gi,
       /\b(?:within|in|you have|expires? in)\s+(?:\d+|one|two|three|four|five|ten|fifteen|thirty)\s+(?:minutes?|hours?|seconds?)\b/gi,
+      /\b(?:expires?|ends?|deadline (?:is|falls))\s+(?:at\s+)?(?:today|tonight|tomorrow|midnight|noon)\b/gi,
     ],
   },
   {
@@ -75,8 +76,12 @@ const rules: Rule[] = [
     needsRequest: true,
     patterns: [
       /\bgift[\s-]*cards?\b/gi,
+      // Common redeemable-payment wording, including speech-to-text variants.
+      // A matching noun still needs an affirmative request in its local clause.
+      /\b(?:pre[\s-]?paid\s+(?:cards?|vouchers?)|(?:cash|payment|digital|top[\s-]?up)\s+vouchers?|(?:Steam|Apple|iTunes|Google\s+Play|Amazon|Xbox|PlayStation|Roblox|Nintendo|Target|Walmart|Visa|Mastercard)\s+(?:gift[\s-]*)?cards?)\b/gi,
       /\b(?:wire transfer|crypto(?:currency)?|bitcoin|payment app|cash app|zelle|venmo)\b/gi,
       /\b(?:passwords?|passcodes?|PIN|OTP|(?:verification|security|login|six[- ]digit|two[- ]factor)\s+codes?|one[- ]time\s+(?:codes?|passwords?)|bank (?:accounts?|login)|social security (?:numbers?|details)|credit card (?:numbers?|details)|card (?:PIN|numbers?))\b/gi,
+      /\b(?:(?:\d+|four|six|eight)[\s-]+digit\s+)?(?:login|sign[\s-]?in|authentication|verification|security|one[\s-]?time)\s+(?:numbers?|pass[\s-]?codes?|PINs?)\b/gi,
       /\b(?:pay|send|transfer|wire)\s+(?:(?:me|us|a|the|this|your)\s+){0,2}(?:(?:processing|rescue|application|reservation|inspection)\s+)?(?:fee|charge|deposit|money|cash|\$\s*\d[\d,.]*)\b/gi,
       /\b(?:fee|payment|deposit)\s+(?:to|before you can)\s+(?:reserve|access|get|receive|release|qualify|claim)\b/gi,
     ],

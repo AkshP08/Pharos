@@ -70,3 +70,34 @@ test('an empty or ambiguous fragment never gets an invented probability or safet
     assert.ok(result.nextStep.includes('cannot verify'));
   }
 });
+
+test('reported independent-QA misses are retained as post-fix regressions, not new validation claims', t => {
+  const reportedMisses = scenarios.filter(item => item.regressionOrigin === 'independent-qa-pre-fix-miss');
+  assert.equal(reportedMisses.length, 2);
+  for (const scenario of reportedMisses) {
+    assert.deepEqual(scenario.beforeFix, { warn: false, level: 'low', kinds: [] });
+    const actual = analyzePressureText(scenario.text);
+    assert.equal(actual.shouldWarn, true, scenario.id);
+    assert.ok(actual.signals.some(signal => signal.kind === 'money_or_secret'), scenario.id);
+  }
+  const steam = scenarios.find(item => item.id === 'qa-derived-steam-payment-cue');
+  assert.equal(steam.beforeFix.level, 'medium');
+  assert.ok(analyzePressureText(steam.text).signals.some(signal => signal.kind === 'money_or_secret'));
+  t.diagnostic('Independent QA reported 2 missed warnings in a separate 10-example check before these changes. The two supplied misses and a derived Steam-card cue case are now regression tests; post-fix pass counts are not independent accuracy estimates.');
+});
+
+test('new instrument and login-secret wording retains affirmative-request and negation safeguards', () => {
+  for (const text of [
+    'I found a prepaid voucher.',
+    'The Steam card is in the lost-property box.',
+    'Never share a sign in passcode with someone claiming to be from FEMA.',
+    'Do not buy pre paid cards to pay a caller.',
+    'FEMA assistance has no payment voucher requirement.',
+  ]) assert.equal(analyzePressureText(text).shouldWarn, false, text);
+  for (const text of [
+    'Please read me your sign in number.',
+    'Please purchase a prepaid voucher.',
+    'Give me an Xbox card.',
+    'Read the verification number to me.',
+  ]) assert.ok(analyzePressureText(text).signals.some(signal => signal.kind === 'money_or_secret'), text);
+});

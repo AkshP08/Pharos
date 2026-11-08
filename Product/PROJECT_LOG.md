@@ -242,3 +242,11 @@ Append a dated note after each meaningful implementation session. Include what c
 ### References checked
 - Photon [2.0 announcement](https://photon.codes/blog/introducing-photon-2.0) and [Beta Cookbooks](https://photon.codes/docs/beta/cookbooks).
 - LiveKit [inbound-call workflow](https://docs.livekit.io/telephony/accepting-calls/workflow-setup/) and [SIP inbound trunk](https://docs.livekit.io/telephony/accepting-calls/inbound-trunk/).
+
+## 2026-11-07 7:16 PM CST — Voice-first preview and animated Guide deployed
+
+- Committed and pushed the correction as `70f89e3` under the student's Git identity, with no AI co-author.
+- Rebuilt and deployed to the existing DeepSpace URL. DeepSpace confirmed edge serving, `dirty: false`, GitHub source `akshp08/signalbridge-hackutd-2026`, release `rel_01M6WBHWEDHR797T8NANKAWAZ6`, and no app secrets in the deployment.
+- Visually reviewed the live Flare call-first page, opened the sample call, and checked the consent line, short questions, read-back, caller confirmation, backup form label, and “hotline not connected yet” status. Opened the Pharos Guide and saw the new tiny bobbing/blinking Pharaoh with animated lantern light.
+- Screenshots of the call-first flow and animated guide were displayed inline during this progress update. The browser screenshot tool does not return a repository file path; they are not archived in `Product/screenshots/`. The setup screenshot of Photon’s channel picker remains the saved screenshot.
+- The visible demo still performs no real call, does not request microphone permission, and transmits no data. Photon line provisioning, LiveKit configuration, and a consenting call test remain future setup tasks.

@@ -1,0 +1,8 @@
+# Only these public runtime inputs may enter a hosted build.
+*
+!Dockerfile
+!.dockerignore
+!requirements.txt
+!agent.py
+!pharos_runtime.py
+!pharos_semantic.py

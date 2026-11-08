@@ -1,0 +1,7 @@
+# Direct runtime versions verified in the demo venv; compatible with pyproject.
+# No provider-specific plugin/API key is required for LiveKit Inference.
+httpx==0.28.1
+livekit-agents==1.8.11
+python-dotenv==1.2.4
+truststore==0.10.5
+pydantic==2.14.3

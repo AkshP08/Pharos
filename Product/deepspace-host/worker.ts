@@ -492,6 +492,11 @@ export default {
       }
 
       if (pathname.startsWith('/api/')) return responseJson({ error: 'API route not found' }, 404)
+      if (['/manual', '/tests', '/design', '/demo'].includes(pathname)) {
+        const assetUrl = new URL(request.url)
+        assetUrl.pathname = `${pathname}.html`
+        return env.ASSETS.fetch(new Request(assetUrl, request))
+      }
       return env.ASSETS.fetch(request)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Request failed'

@@ -7,7 +7,7 @@ const hostDir = path.dirname(fileURLToPath(import.meta.url));
 const productDir = path.resolve(hostDir, '..');
 const publicDir = path.join(hostDir, 'public');
 
-for (const file of ['app.js', 'styles.css', 'about.html', 'guard.html', 'guard.js', 'guard-worker.js', 'guard.webmanifest', 'guard-icon.svg']) {
+for (const file of ['manual.html', 'docs.css', 'app.js', 'styles.css', 'about.html', 'guard.html', 'guard.js', 'guard-worker.js', 'guard.webmanifest', 'guard-icon.svg']) {
   copyFileSync(path.join(productDir, file), path.join(publicDir, file));
 }
 

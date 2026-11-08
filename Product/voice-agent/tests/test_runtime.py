@@ -72,12 +72,19 @@ class ConfigurationTests(unittest.TestCase):
                 replace(self.settings, livekit_url=url, managed_cloud=True).validate()
         for managed in (False, True):
             replace(self.settings, livekit_url='wss://public.example:443', managed_cloud=managed).validate()
-            for url in ('ws://public.example', 'http://public.example', 'https://public.example',
+            for url in ('ws://public.example', 'http://public.example',
                         'ws://10.0.0.1:7880', 'http://gateway.internal:7880', 'ws://127.0.0.2:7880',
                         'http://localhost.example:7880'):
                 with self.subTest(url=url, managed=managed):
                     with self.assertRaises(ConfigurationError):
                         replace(self.settings, livekit_url=url, managed_cloud=managed).validate()
+
+    def test_managed_https_gateway_preserves_encrypted_sdk_transport(self):
+        for url in ('https://gateway.example', 'https://gateway.example:443/worker'):
+            with self.subTest(url=url):
+                with self.assertRaises(ConfigurationError):
+                    replace(self.settings, livekit_url=url).validate()
+                replace(self.settings, livekit_url=url, managed_cloud=True).validate()
 
     def test_livekit_rejects_url_credentials_query_fragment_and_empty_host_without_leaking(self):
         private = 'fictional-private-value'

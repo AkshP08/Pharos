@@ -139,9 +139,10 @@ class Settings:
             livekit.port  # Validate port syntax without retaining/logging it.
         except ValueError:
             valid_url = False
-        # Managed LiveKit containers use a trusted loopback gateway. Public and
-        # ordinary local configurations must still use encrypted WebSockets.
-        allowed_transport = scheme == "wss" or (self.managed_cloud and loopback and scheme in {"ws", "http"})
+        # The SDK maps hosted HTTPS gateways to WSS before connecting. Only
+        # marked exact-loopback gateways may use an unencrypted transport.
+        allowed_transport = (scheme == "wss" or (self.managed_cloud and scheme == "https")
+                             or (self.managed_cloud and loopback and scheme in {"ws", "http"}))
         if not valid_url or not allowed_transport:
             raise ConfigurationError(f"LIVEKIT_URL invalid (scheme={scheme}, loopback={str(loopback).lower()}, managed={str(self.managed_cloud).lower()})")
         if self.mode not in {"intake", "guard"}:

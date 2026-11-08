@@ -27,13 +27,26 @@ function startPolling() {
   clearInterval(pollTimer);
   if (tokenPattern.test(token) && !disconnecting) pollTimer = setInterval(refresh, 2500);
 }
+function showReviewStatus(data) {
+  let message = '';
+  if (data.analysisMode === 'semantic') {
+    if (data.reviewStatus === 'pending') message = 'Reviewing the latest call wording…';
+    else if (data.reviewStatus === 'unavailable') message = 'Context review unavailable. This does not verify the caller. Check unexpected money, code, or access requests independently; continue immediate physical safety instructions.';
+    else if (data.reviewStatus === 'completed') message = data.alerts?.length
+      ? 'Contextual transcript review completed. Review the warning below; caller identity and safety are not verified.'
+      : 'No warning identified in this review. Caller identity and safety are not verified.';
+  }
+  $('#reviewCard').hidden = !message;
+  $('#reviewStatus').textContent = message;
+}
 function showAlert(alert) {
   $('#warningCard').hidden = false;
   $('#warningCard').classList.add('warn');
   $('#waitingCard').hidden = true;
   $('#warningTitle').textContent = alert.headline || 'Pause and verify';
   $('#warningConfidence').textContent = alert.confidence || 'A wording pattern deserves independent verification; this is not a fraud probability.';
-  $('#warningTime').textContent = `Call warning · ${new Date(alert.createdAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
+  const sourceLabel = alert.analysisSource === 'context-model' ? 'Contextual transcript review' : 'Call wording review';
+  $('#warningTime').textContent = `${sourceLabel} · ${new Date(alert.createdAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
   $('#evidence').replaceChildren();
   for (const signal of alert.signals || []) {
     const row = document.createElement('li');
@@ -62,6 +75,8 @@ async function refresh() {
     $('#enableNotifications').disabled = !data.pushPublicKey;
     $('#enableNotifications').dataset.publicKey = data.pushPublicKey || '';
     if (!data.pushPublicKey) $('#notificationStatus').textContent = 'Phone push is not configured yet. This screen can show warnings while open.';
+    showReviewStatus(data);
+    // Returned alerts remain authoritative, including earlier warnings retained after a later review.
     if (data.alerts?.length) showAlert(data.alerts[0]);
     else clearAlert();
   } catch (error) {
@@ -70,7 +85,7 @@ async function refresh() {
     $('#connectionDetail').textContent = error.message;
     if ([401,404].includes(error.status)) {
       localStorage.removeItem(storageKey);token='';$('#pairing').hidden=false;$('#enableNotifications').disabled=true;clearInterval(pollTimer);
-      $('#disconnectPhone').hidden=true;$('#connection').classList.remove('active');clearAlert();
+      $('#disconnectPhone').hidden=true;$('#connection').classList.remove('active');clearAlert();showReviewStatus({});
     }
   }
 }
@@ -79,7 +94,7 @@ $('#pairButton').addEventListener('click', async () => {
   const value = $('#pairingInput').value.trim();
   const nextToken = value.includes('#') ? value.split('#').pop() : value;
   if (!tokenPattern.test(nextToken)) { $('#connectionDetail').textContent = 'Use the complete private link or its 43-character code.'; return; }
-  ++refreshSequence;token=nextToken;clearAlert();
+  ++refreshSequence;token=nextToken;clearAlert();showReviewStatus({});
   $('#pairingInput').value=''; await refresh();
   startPolling();
 });
@@ -126,7 +141,7 @@ $('#disconnectPhone').addEventListener('click', async () => {
     } else browserUnsubscribed = true;
   } catch {}
   if (serverRemoved || browserUnsubscribed) {
-    localStorage.removeItem(storageKey);token='';clearAlert();location.reload();
+    localStorage.removeItem(storageKey);token='';clearAlert();showReviewStatus({});location.reload();
     return;
   }
   disconnecting = false;

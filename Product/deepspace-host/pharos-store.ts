@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import { analyzeCall, analyzeScamText, eligibleRespondersFor, makeSeedData, rankFor, transcriptText, type CallSession, type Incident, type PharosCase, type Priority, type Responder, type ResidentAlert, type ScamReview, type TranscriptTurn, type Zone } from './pharos-domain'
+import { semanticAnalysis } from './pharos-semantic'
 
 type StoreCommand = {
   action: string
@@ -14,8 +15,8 @@ function decode<T>(value: unknown): T {
   return JSON.parse(String(value)) as T
 }
 
-function publicCall(call: CallSession): Omit<CallSession, 'callerRef'> {
-  const { callerRef: _privateLookup, ...visible } = call
+function publicCall(call: CallSession): Omit<CallSession, 'callerRef' | 'reviewIdentity'> {
+  const { callerRef: _privateLookup, reviewIdentity: _privateEvidence, ...visible } = call
   return visible
 }
 
@@ -237,8 +238,13 @@ export class PharosStore extends DurableObject {
         call.caseId = caseRecord.id
       }
     }
+    const warning = call.analysisMode !== 'semantic' && pressure.shouldWarn ? this.recordPressure(call, pressure, callerText, 'wording-rules') : null
+    return { caseRecord, warning }
+  }
+
+  private recordPressure(call: CallSession, pressure: ReturnType<typeof analyzeScamText>, callerText: string, analysisSource: 'wording-rules' | 'context-model'): ResidentAlert | null {
     if (pressure.shouldWarn) {
-      const review: ScamReview = { id: `SC-${call.id}`, source: 'call', sourceId: call.id, text: callerText, level: pressure.level, headline: pressure.headline, signals: pressure.signals, nextStep: pressure.nextStep, createdAt: call.startedAt, synthetic: call.synthetic }
+      const review: ScamReview = { id: `SC-${call.id}`, source: 'call', sourceId: call.id, text: callerText, level: pressure.level, headline: pressure.headline, signals: pressure.signals, nextStep: pressure.nextStep, createdAt: call.startedAt, synthetic: call.synthetic, analysisSource }
       this.putScam(review)
       call.scamReviewId = review.id
     }
@@ -247,12 +253,12 @@ export class PharosStore extends DurableObject {
       const previous = this.rows<{ payload: string }>('SELECT payload FROM resident_alerts WHERE call_id = ?', call.id).map(row => decode<ResidentAlert>(row.payload))
       const rank = { low: 0, medium: 1, high: 2 }
       if (!previous.some(item => rank[item.level] >= rank[pressure.level])) {
-        warning = { id: `AL-${call.id}-${pressure.level}`, callId: call.id, headline: pressure.headline, level: pressure.level, signals: pressure.signals, nextStep: pressure.nextStep, evidenceQuality: pressure.evidenceQuality, confidence: pressure.confidence, createdAt: new Date().toISOString(), synthetic: call.synthetic, deliveryStatus: 'available' }
+        warning = { id: `AL-${call.id}-${pressure.level}`, callId: call.id, headline: pressure.headline, level: pressure.level, signals: pressure.signals, nextStep: pressure.nextStep, evidenceQuality: pressure.evidenceQuality, confidence: pressure.confidence, createdAt: new Date().toISOString(), synthetic: call.synthetic, deliveryStatus: 'available', analysisSource }
         this.sql.exec('INSERT OR IGNORE INTO resident_alerts (id, call_id, created_at, synthetic, payload) VALUES (?, ?, ?, ?, ?)', warning.id, call.id, warning.createdAt, Number(call.synthetic), JSON.stringify(warning))
         this.audit('call.warning', { callId: call.id, warningId: warning.id, level: warning.level })
       }
     }
-    return { caseRecord, warning }
+    return warning
   }
 
   private voiceEvent(command: StoreCommand): Record<string, unknown> {
@@ -262,6 +268,7 @@ export class PharosStore extends DurableObject {
     if (event === 'call.started') {
       if (!call) {
         call = { id, provider: command.transport === 'webrtc' ? 'LiveKit WebRTC audio test' : 'Photon SIP → LiveKit', transport: command.transport === 'webrtc' ? 'webrtc' : 'sip', purpose: command.purpose === 'guard' ? 'guard' : 'intake', status: 'ringing', consent: 'pending', transcript: '', turns: [], caseId: null, scamReviewId: null, startedAt: new Date().toISOString(), endedAt: null, transcriptionSource: 'LiveKit Inference STT', synthetic: false, ...(typeof command.callerRef === 'string' ? { callerRef: command.callerRef } : {}) }
+        call.analysisMode = call.purpose === 'guard' && command.analysisMode === 'semantic' ? 'semantic' : 'wording'
         this.putCall(call)
       }
       if (call.synthetic) throw new Error('Call ID belongs to a synthetic session')
@@ -281,6 +288,8 @@ export class PharosStore extends DurableObject {
       call.turns = []
       call.transcriptExpiredAt = new Date().toISOString()
       delete call.callerRef
+      delete call.reviewIdentity
+      delete call.reviewStatus
       this.sql.exec('DELETE FROM transcript_turns WHERE call_id = ?', id)
       this.sql.exec('DELETE FROM scam_reviews WHERE source_id = ?', id)
       this.sql.exec('DELETE FROM resident_alerts WHERE call_id = ?', id)
@@ -319,6 +328,29 @@ export class PharosStore extends DurableObject {
       this.putCall(call)
       return { accepted: true, consent }
     }
+    if (event === 'pressure.review' || event === 'pressure.unavailable') {
+      if (call.purpose !== 'guard' || call.analysisMode !== 'semantic' || call.consent !== 'yes' || call.endedAt) throw new Error('Context review requires an open consented semantic guard call')
+      let latest = call.turns.length - 1
+      while (latest >= 0 && call.turns[latest].role !== 'caller') latest -= 1
+      if (!Number.isSafeInteger(command.sequence) || latest < 0 || command.sequence !== latest) throw new Error('Context review sequence is stale or invalid')
+      if (event === 'pressure.unavailable') {
+        if (call.reviewStatus !== 'completed' || call.reviewSequence !== latest) call.reviewStatus = 'unavailable'
+        this.putCall(call)
+        return { accepted: true, callId: id, reviewStatus: call.reviewStatus, warning: null }
+      }
+      const callerText = call.turns.filter(turn => turn.role === 'caller').map(turn => turn.text).join(' ')
+      const { analysis, identity } = semanticAnalysis(command.review, callerText)
+      if (call.reviewSequence === latest && call.reviewIdentity) {
+        if (identity !== call.reviewIdentity) throw new Error('Context review sequence conflicts with its earlier result')
+        return { accepted: true, callId: id, duplicate: true, reviewStatus: call.reviewStatus, warning: null }
+      }
+      const warning = analysis.shouldWarn ? this.recordPressure(call, analysis, callerText, 'context-model') : null
+      call.reviewSequence = latest
+      call.reviewIdentity = identity
+      call.reviewStatus = 'completed'
+      this.putCall(call)
+      return { accepted: true, callId: id, reviewStatus: call.reviewStatus, warning }
+    }
     if (event === 'turn') {
       if (call.consent !== 'yes') throw new Error('Transcript storage requires caller consent')
       const sequence = Number(command.sequence)
@@ -338,6 +370,7 @@ export class PharosStore extends DurableObject {
       this.sql.exec('INSERT INTO transcript_turns (call_id, sequence, role, created_at, payload) VALUES (?, ?, ?, ?, ?)', id, sequence, turn.role, turn.at, JSON.stringify(turn))
       call.turns.push(turn)
       call.transcript = transcriptText(call.turns)
+      if (role === 'caller' && call.analysisMode === 'semantic') call.reviewStatus = 'pending'
       const analysis = role === 'caller' ? this.refreshCall(call) : { caseRecord: null, warning: null }
       this.putCall(call)
       return { accepted: true, callId: id, status: call.status, purpose: call.purpose, caseId: call.caseId, caseCreated: Boolean(analysis.caseRecord), warning: analysis.warning }
@@ -347,6 +380,7 @@ export class PharosStore extends DurableObject {
       call.status = call.consent === 'no' ? 'declined' : command.deliveryFailed === true ? 'failed' : 'completed'
       call.deliveryFailed = command.deliveryFailed === true
       call.endedAt = new Date().toISOString()
+      if (call.analysisMode === 'semantic' && call.reviewStatus === 'pending') call.reviewStatus = 'unavailable'
       const analysis = call.consent === 'yes' ? this.refreshCall(call) : { caseRecord: null, warning: null }
       this.putCall(call)
       return { accepted: true, callId: id, status: call.status, caseId: call.caseId, warning: analysis.warning }
@@ -395,7 +429,7 @@ export class PharosStore extends DurableObject {
           const alerts = (recipientScope
             ? this.rows<{ payload: string }>("SELECT a.payload FROM resident_alerts a JOIN calls c ON a.call_id = c.id WHERE a.synthetic = 0 AND json_extract(c.payload, '$.purpose') = 'guard' AND json_extract(c.payload, '$.transcriptExpiredAt') IS NULL ORDER BY a.created_at DESC LIMIT 20")
             : this.rows<{ payload: string }>('SELECT payload FROM resident_alerts WHERE call_id = ? ORDER BY created_at DESC', access.call_id)).map(row => decode<ResidentAlert>(row.payload))
-          return json({ status: call?.status || 'completed', alerts, expiresAt: new Date(access.expires_at).toISOString() })
+          return json({ status: call?.status || 'completed', analysisMode: call?.analysisMode, reviewStatus: call?.transcriptExpiredAt ? undefined : call?.reviewStatus, alerts, expiresAt: new Date(access.expires_at).toISOString() })
         }
         case 'warning.enroll': {
           const expiresAt = Date.now() + this.retentionMs
@@ -656,6 +690,8 @@ export class PharosStore extends DurableObject {
             call.turns = []
             call.transcriptExpiredAt = new Date().toISOString()
             delete call.callerRef
+            delete call.reviewIdentity
+            delete call.reviewStatus
             this.sql.exec('UPDATE calls SET payload = ? WHERE id = ?', JSON.stringify(call), row.id)
             this.sql.exec('DELETE FROM transcript_turns WHERE call_id = ?', row.id)
             const scamRows = this.rows<{ id: string; payload: string }>('SELECT id, payload FROM scam_reviews WHERE source_id = ? AND synthetic = 0', row.id)
@@ -704,7 +740,7 @@ export class PharosStore extends DurableObject {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Store request failed'
-      const status = /requires caller consent/.test(message) ? 403 : /expired/.test(message) ? 410 : /before sending|sequence|already|closed/.test(message) ? 409 : 400
+      const status = /requires caller consent/.test(message) ? 403 : /expired/.test(message) ? 410 : /before sending|sequence|already|closed|open consented/.test(message) ? 409 : 400
       return json({ error: message }, status)
     }
   }

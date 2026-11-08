@@ -26,7 +26,7 @@ async function client(options = {}) {
   let nextTimer = 0;
   let reloads = 0;
   const state = {
-    onStatus: () => response(status([warning])),
+    onStatus: options.onStatus || (() => response(status([warning]))),
     onRemove: options.onRemove || (() => response({ removed: true })),
     subscription: options.subscription === undefined ? { endpoint, unsubscribe: async () => true } : options.subscription,
     lookupError: options.lookupError,
@@ -210,4 +210,39 @@ test('re-pairing clears prior evidence and ignores an old enrollment response', 
   assertWarningCleared(page);
   assert.equal(page.storage.get(storageKey), nextEnrollment);
   assert.equal(page.value('token'), nextEnrollment);
+});
+
+test('semantic pending shows a neutral review state without an early warning', async () => {
+  const page = await client({ onStatus: () => response({ ...status([]), analysisMode: 'semantic', reviewStatus: 'pending' }) });
+  assert.equal(page.get('#reviewCard').hidden, false);
+  assert.equal(page.get('#reviewStatus').textContent, 'Reviewing the latest call wording…');
+  assert.equal(page.get('#reviewCard').classList.contains('active'), false);
+  assertWarningCleared(page);
+  page.state.onStatus = () => response(status([]));
+  await page.refresh();
+  assert.equal(page.get('#reviewCard').hidden, true, 'calls without semantic review keep the existing flow');
+  assert.equal(page.get('#reviewStatus').textContent, '');
+});
+
+test('semantic unavailable is unverified and retains an earlier returned context warning', async () => {
+  const contextWarning = { ...warning, analysisSource: 'context-model' };
+  const page = await client({ onStatus: () => response({ ...status([contextWarning]), analysisMode: 'semantic', reviewStatus: 'unavailable' }) });
+  assert.equal(page.get('#reviewCard').hidden, false);
+  assert.equal(page.get('#reviewStatus').textContent, 'Context review unavailable. This does not verify the caller. Check unexpected money, code, or access requests independently; continue immediate physical safety instructions.');
+  assert.equal(page.get('#warningCard').hidden, false);
+  assert.equal(page.get('#evidence').children.length, 1);
+  assert.match(page.get('#warningTime').textContent, /^Contextual transcript review · /);
+  assert.equal(page.get('#reviewCard').classList.contains('active'), false);
+});
+
+test('semantic completed never verifies safety and does not erase returned earlier alerts', async () => {
+  const page = await client({ onStatus: () => response({ ...status([]), analysisMode: 'semantic', reviewStatus: 'completed' }) });
+  assert.equal(page.get('#reviewStatus').textContent, 'No warning identified in this review. Caller identity and safety are not verified.');
+  assertWarningCleared(page);
+  page.state.onStatus = () => response({ ...status([{ ...warning, analysisSource: 'context-model' }]), analysisMode: 'semantic', reviewStatus: 'completed' });
+  await page.refresh();
+  assert.equal(page.get('#warningCard').hidden, false);
+  assert.equal(page.get('#evidence').children.length, 1);
+  assert.equal(page.get('#reviewStatus').textContent, 'Contextual transcript review completed. Review the warning below; caller identity and safety are not verified.');
+  assert.equal(page.get('#reviewCard').classList.contains('active'), false);
 });

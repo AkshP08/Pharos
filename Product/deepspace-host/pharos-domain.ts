@@ -100,6 +100,10 @@ export interface CallSession {
   deliveryFailed?: boolean
   /** Internal keyed lookup, removed from every public response and at expiry. */
   callerRef?: string
+  analysisMode?: 'wording' | 'semantic'
+  reviewStatus?: 'pending' | 'completed' | 'unavailable'
+  reviewSequence?: number
+  reviewIdentity?: string
 }
 
 export interface ResidentAlert {
@@ -115,6 +119,7 @@ export interface ResidentAlert {
   evidenceQuality?: string
   confidence?: string
   displayedAt?: string
+  analysisSource?: 'wording-rules' | 'context-model'
 }
 
 export interface ScamReview {
@@ -128,6 +133,7 @@ export interface ScamReview {
   nextStep: string
   createdAt: string
   synthetic: boolean
+  analysisSource?: 'wording-rules' | 'context-model'
 }
 
 export interface Incident {

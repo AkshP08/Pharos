@@ -223,7 +223,7 @@ async function handleVoiceIngest(request: Request, env: Env, ctx: ExecutionConte
   const callId = String(body.callId || '')
   if (!/^[a-zA-Z0-9._:-]{1,180}$/.test(callId)) return responseJson({ error: 'A safe callId is required' }, 400)
   const event = String(body.event || '')
-  if (!['call.started', 'consent', 'consent.revoked', 'turn', 'call.ended'].includes(event)) return responseJson({ error: 'Unsupported voice event' }, 400)
+  if (!['call.started', 'consent', 'consent.revoked', 'turn', 'call.ended', 'pressure.review', 'pressure.unavailable'].includes(event)) return responseJson({ error: 'Unsupported voice event' }, 400)
   let warningUrl: string | undefined
   let warningTokenHash: string | undefined
   let callerRef: string | undefined
@@ -238,7 +238,7 @@ async function handleVoiceIngest(request: Request, env: Env, ctx: ExecutionConte
       callerRef = toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `caller:${body.callerNumber}`))
     }
   }
-  const result = await callStore(env, 'voice.event', { callId, event, purpose: body.purpose, transport: body.transport, callerRef, consent: body.consent, role: body.role, text: body.text, sequence: body.sequence, deliveryFailed: body.deliveryFailed === true, warningTokenHash })
+  const result = await callStore(env, 'voice.event', { callId, event, purpose: body.purpose, transport: body.transport, analysisMode: body.analysisMode, review: body.review, callerRef, consent: body.consent, role: body.role, text: body.text, sequence: body.sequence, deliveryFailed: body.deliveryFailed === true, warningTokenHash })
   if (result.warning) ctx.waitUntil(deliverWarning(env, result.warning as import('./pharos-domain').ResidentAlert))
   return responseJson({ ...result, ...(warningUrl ? { warningUrl } : {}) }, event === 'call.started' || event === 'turn' ? 202 : 200)
 }

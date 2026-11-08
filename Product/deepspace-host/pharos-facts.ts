@@ -35,6 +35,30 @@ function normalize(text: string): string {
   return text.replace(/[’‘]/g, "'").replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim()
 }
 
+const reportedSpeechPattern = /\b(?:someone (?:called|texted|messaged) me|(?:the )?(?:scammer|caller|stranger)(?:\s+[\w'-]+){0,4}?\s+(?:said|says|told|claimed|claims|warned|threatened)|(?:the )?(?:message|text|email)\s+(?:said|says|claimed|claims|warned)|they\s+(?:said|told me|claimed|warned|threatened))\b/gi
+
+/** Keep reported scam/contact speech out of the caller's current physical facts.
+ * A separate statement after a sentence boundary or contrast remains usable.
+ * Replacing with spaces preserves evidence positions within normalized text.
+ */
+function currentReportText(text: string): string {
+  let current = text
+  for (const quote of text.matchAll(/(?:["“][^"”]*["”]|(?<![\w])'[\s\S]*?'(?![\w]))/g)) {
+    const start = quote.index ?? 0
+    if (![...text.slice(Math.max(0, start - 140), start).matchAll(reportedSpeechPattern)].length) continue
+    // Closing punctuation may be inside the quote. Keep an outside boundary so
+    // the next independent household report is not swallowed with the quote.
+    current = current.slice(0, start) + ' '.repeat(quote[0].length - 1) + ';' + current.slice(start + quote[0].length)
+  }
+  for (const reported of [...current.matchAll(reportedSpeechPattern)]) {
+    const start = reported.index ?? 0
+    const boundary = current.slice(start + reported[0].length).search(/[.!?;]|\bbut\b|\bhowever\b/i)
+    const end = boundary < 0 ? current.length : start + reported[0].length + boundary
+    current = current.slice(0, start) + ' '.repeat(end - start) + current.slice(end)
+  }
+  return current
+}
+
 function originalEvidence(rawText: string, evidence: string | null): string | null {
   if (!evidence) return null
   const escaped = evidence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, "['’‘]").replace(/\s+/g, '\\s+').replace(/-/g, '[-–—]')
@@ -59,19 +83,20 @@ function promptFor(text: string): Prompt {
 function negatedAt(text: string, index: number): boolean {
   const prefix = text.slice(0, index).split(/[.!?;,]|\bbut\b|\bhowever\b|\band (?:i|we|they|he|she|my|our)\b/i).at(-1) || ''
   const nearby = prefix.split(/\s+/).slice(-7).join(' ')
-  return /\b(?:no|not|never|without|neither|nobody|no one|no longer|don't|do not|doesn't|does not|isn't|is not|aren't|are not|wasn't|was not|weren't|were not)\b/i.test(nearby)
+  return /\b(?:no|not|never|without|neither|nobody|no one|no longer|don't|do not|doesn't|does not|didn't|did not|haven't|have not|hasn't|has not|isn't|is not|aren't|are not|wasn't|was not|weren't|were not)\b/i.test(nearby)
 }
 
 function callerHazard(text: string): string | null {
-  // Reported scam quotations are reviewed separately, rather than promoted to
-  // facts about the resident's own physical circumstances.
-  if (/\b(?:someone called me|scammer (?:said|told)|they (?:said|told me)|the (?:message|text|caller) says)\b/i.test(text)
-    && !/\b(?:but (?:i|we|my|our)|i (?:am|can't|cannot)|we (?:are|can't|cannot)|my (?:home|house|father|mother|child))\b/i.test(text)) return null
   const patterns = [
     /\btrapped\b/gi,
     /\b(?:cannot|can't|unable to) (?:get out|leave|escape|breathe)\b/gi,
     /\bno safe (?:way out|exit)\b/gi,
-    /\b(?:water|floodwater) (?:is |has been )?(?:now )?(?:rising (?:inside|in (?:my|our|the) (?:house|home|room))|coming (?:in|into (?:my|our|the) (?:house|home|room))|inside(?: (?:my|our|the) (?:house|home|room))?|coming up(?: (?:the )?stairs|stairs))\b/gi,
+    /\b(?:water|floodwater) (?:is |has been )?(?:now )?(?:rising (?:inside|in (?:my|our|the) (?:house|home|room))|coming (?:in|into (?:my|our|the) (?:house|home|room))|inside(?: (?:my|our|the) (?:house|home|room))?|coming up(?: (?:the |my |our )?stairs|stairs))\b/gi,
+    // Concrete own-home water levels, not a generic rising river or forecast.
+    /\b(?:water|floodwater)(?: level)? (?:has |is )?(?:now )?(?:reached|reaching|risen (?:to|above)|up to|above|past|over) (?:my|our) (?:ground|first|second|upper) floor\b/gi,
+    /\b(?:water|floodwater)(?: level)? (?:has |is )?(?:now )?(?:reached|reaching|risen (?:to|above)|up to|above|past|over) (?:the )?(?:ground|first|second|upper) floor (?:of|in) (?:my|our) (?:house|home)\b/gi,
+    /\b(?:my|our) (?:ground|first|second|upper) floor (?:is|has become) (?:now )?(?:under water|underwater|flooded)\b/gi,
+    /\b(?:water|floodwater) (?:is )?(?:now )?(?:waist|chest|neck)[- ]deep (?:inside|in (?:my|our|the) (?:house|home|room))\b/gi,
     /\b(?:fire|smoke) (?:is )?(?:inside|in (?:my|our|the) (?:house|home|room)|near (?:my|our) (?:home|house))\b/gi,
     /\b(?:unconscious|seriously injured|serious injury|bleeding heavily|life[- ]threatening)\b/gi,
     /\b(?:i am|i'm|we are|we're|someone is) in (?:immediate )?danger\b/gi,
@@ -79,6 +104,8 @@ function callerHazard(text: string): string | null {
   for (const pattern of patterns) {
     for (const match of text.matchAll(pattern)) {
       if (negatedAt(text, match.index ?? 0)) continue
+      const localPrefix = text.slice(0, match.index ?? 0).split(/[.!?;,]|\bbut\b|\bhowever\b/i).at(-1) || ''
+      if (/\b(?:if|unless|in case|suppose|imagine)\b/i.test(localPrefix)) continue
       if (uncertainPattern.test(text.slice(Math.max(0, (match.index ?? 0) - 45), (match.index ?? 0) + match[0].length))) continue
       return match[0]
     }
@@ -99,7 +126,7 @@ function safetyReport(text: string, prompt: Prompt): { value: Safety; evidence: 
   const directYes = safetyContext && (prompt === 'safe' ? firstNo : firstYes)
   const directNo = explicitSafe || (safetyContext && (prompt === 'safe' ? firstYes : firstNo))
   if ((danger || directYes) && directNo) return { value: 'unknown', evidence: null, reported: true, corrected: correction.corrected || changingSituation }
-  if (uncertain && (safetyContext || danger || /\b(?:danger|safe|trapped|breathe|(?:water|floodwater)\b.{0,45}\b(?:inside|rising|coming up))\b/i.test(value))) return { value: 'unknown', evidence: null, reported: true, corrected: correction.corrected || changingSituation }
+  if (uncertain && (safetyContext || danger || /\b(?:danger|safe|trapped|breathe|(?:water|floodwater)\b.{0,70}\b(?:inside|rising|coming up|reached|risen|floor|deep))\b/i.test(value))) return { value: 'unknown', evidence: null, reported: true, corrected: correction.corrected || changingSituation }
   if (danger || directYes) return { value: 'yes', evidence: danger || value, reported: true, corrected: correction.corrected || changingSituation }
   if (directNo) return { value: 'no', evidence: null, reported: true, corrected: correction.corrected || changingSituation }
   return { value: 'unknown', evidence: null, reported: false, corrected: false }
@@ -107,22 +134,31 @@ function safetyReport(text: string, prompt: Prompt): { value: Safety; evidence: 
 
 function locationCandidate(text: string, prompted: boolean): { value: string; reported: boolean; corrected: boolean } {
   const tail = correctionTail(text)
-  const value = tail.text.replace(/\bnot (?:in |at |near )?(?:zone|district)\s+(?:\d+|one|two|three|four|five)\b[^,.;]*(?:[,;]\s*)?/gi, '').trim()
-  if (prompted && /^(?:i |we )?(?:do not|don't|dont) know(?: where (?:i am|we are)| (?:my|our|the) (?:address|location|area))?[.! ]*$/i.test(value)) return { value: '', reported: true, corrected: tail.corrected }
+  const relocation = tail.text.match(/\b(?:(?:i|we)(?: have|'ve)? (?:now )?(?:moved|relocated|evacuated) to|(?:i am|i'm|we are|we're) now (?:at|near|in|by))\b/i)
+  const current = relocation ? tail.text.slice(relocation.index ?? 0) : tail.text
+  const corrected = tail.corrected || Boolean(relocation)
+  const value = current.replace(/\bnot (?:in |at |near )?(?:zone|district)\s+(?:\d+|one|two|three|four|five)\b[^,.;]*(?:[,;]\s*)?/gi, '').trim()
+  if (prompted && /^(?:i |we )?(?:do not|don't|dont) know(?: where (?:i am|we are)| (?:my|our|the) (?:address|location|area))?[.! ]*$/i.test(value)) return { value: '', reported: true, corrected }
   const coordinate = value.match(/(?:^|[^\d])(-?\d{1,2}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,})(?!\d)/)?.[1]
   const address = value.match(/\b\d{1,6}\s+[\w .'-]{2,45}\b(?:street|st\.?|road|rd\.?|avenue|ave\.?|drive|dr\.?|lane|ln\.?|boulevard|blvd\.?|highway|hwy\.?)\b/i)?.[0]
   const zone = value.match(/\b(?:zone|district)\s+(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)\b/i)?.[0]
   const zip = value.match(/\b(?:zip(?: code)? (?:is )?)?(\d{5}(?:-\d{4})?)\b/i)?.[1]
-  const landmark = value.match(/\b(?:near|at|by|beside|outside)\s+(?:the\s+)?([^.!?;]{3,90})/i)?.[0]
+  const landmarkMatch = value.match(/\b(?:near|at|by|beside|outside)\s+(?:the\s+)?([^.!?;]{3,90})/i)?.[0]
+  const landmark = landmarkMatch && !/^(?:near|at|by|beside|outside)\s+(?:an?\s+)?unknown(?: (?:location|place|area))?[.! ]*$/i.test(landmarkMatch) ? landmarkMatch : undefined
   const unknown = /\b(?:don't know|do not know|not sure|unsure|unknown)\b/i.test(value)
-  const plausible = coordinate || address || landmark || zone || zip
-  if (unknown && !plausible) return { value: '', reported: prompted || /\b(?:location|where|address|zone|area)\b/i.test(value), corrected: tail.corrected }
+  let plausible = coordinate || address || landmark || zone || zip
+  if (plausible) {
+    const prefix = value.slice(0, value.indexOf(plausible)).split(/[.!?;,]|\bbut\b|\bhowever\b/i).at(-1) || ''
+    if (/\b(?:if|unless|in case|suppose|imagine)\b/i.test(prefix)) return { value: '', reported: false, corrected: false }
+  }
+  if (plausible && zone && !plausible.toLowerCase().includes(zone.toLowerCase())) plausible += `, ${zone}`
+  if (unknown && !plausible) return { value: '', reported: prompted || Boolean(relocation) || /\b(?:location|where|address|zone|area)\b/i.test(value), corrected }
   if (!prompted && !plausible) return { value: '', reported: false, corrected: false }
   const irrelevantAnswer = /^(?:yes|no|we need|i need|we (?:are|'re) (?:safe|trapped)|i (?:am|'m) (?:safe|trapped)|there are (?:\d+|one|two|three|four|five))\b/i.test(value) && !plausible
   const chosen = prompted && !unknown && !irrelevantAnswer ? value : plausible || ''
   return {
     value: chosen.replace(/\s+(?:and |but )?(?:we|i) (?:need|require|have|are trapped|am trapped)\b.*$/i, '').trim(),
-    reported: Boolean(chosen), corrected: tail.corrected,
+    reported: Boolean(chosen), corrected,
   }
 }
 
@@ -201,14 +237,14 @@ export function deriveCallFacts(turns: readonly FactsTurn[]): CallFacts {
       prompt = promptFor(text)
       continue
     }
-    const fragments = text.split(/(?=\b(?:actually|correction|i meant|we meant|sorry|to correct (?:that|myself)|let me correct)\b)/i).filter(Boolean)
+    const fragments = currentReportText(text).split(/(?=\b(?:actually|correction|i meant|we meant|sorry|to correct (?:that|myself)|let me correct)\b)/i).filter(Boolean)
     for (const fragment of fragments) {
       const safety = safetyReport(fragment, prompt)
       if (safety.reported) {
         const rechecked = prompt === 'safety' || prompt === 'safe'
         // A later explicit worsening report is new evidence, not a static
         // contradiction. Plain conflicting answers still need clarification.
-        const worsening = safety.value === 'yes' && /\b(?:now|getting worse|rising|has risen|coming up|since (?:my|our|the) last call)\b/i.test(fragment)
+        const worsening = safety.value === 'yes' && /\b(?:now|getting worse|rising|has (?:risen|reached)|coming up|since (?:my|our|the) last call)\b/i.test(fragment)
         if (!safetyReported || safety.corrected || rechecked || worsening) {
           immediateDanger = safety.value
           immediateEvidence = originalEvidence(turn.text, safety.evidence)

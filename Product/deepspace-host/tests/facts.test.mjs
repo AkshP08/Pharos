@@ -161,3 +161,79 @@ test('calling back about a situation does not make an exact people count approxi
   assert.equal(result.immediateDanger, 'yes');
   assert.equal(facts(caller('We are calling back about supplies. There are about three of us.')).peopleCount, null);
 });
+
+test('new own-home water levels and household stairs replace an earlier safe report', () => {
+  const reports = [
+    'Water is coming up our stairs now.',
+    'The floodwater has risen above the first floor of our house.',
+    'Water is now up to our second floor.',
+    'Water is now waist deep inside our house.',
+    'Our ground floor is now underwater.',
+  ];
+  for (const text of reports) {
+    const result = facts(caller('We are safe and need drinking water.'), caller(text));
+    assert.equal(result.immediateDanger, 'yes', text);
+    assert.ok(text.includes(result.immediateEvidence), 'Evidence must remain an actual caller quotation');
+    assert.deepEqual(result.needs, ['supplies'], 'A later danger report must preserve a previously requested supply need');
+    assert.ok(!facts(caller(text)).needs.includes('supplies'), 'Floodwater alone is not a drinking-water request');
+  }
+});
+
+test('negated, hypothetical, uncertain and outdoor flood reports do not invent current indoor danger', () => {
+  for (const text of [
+    'Water has not reached the first floor of our house.',
+    'Water is not coming up our stairs.',
+    'If water is up to our second floor, what should we do?',
+    'The river water is higher outside.',
+  ]) {
+    const result = facts(caller('We are safe.'), caller(text));
+    assert.equal(result.immediateDanger, 'no', text);
+    assert.equal(result.immediateEvidence, null);
+  }
+  const uncertain = facts(caller('We are safe.'), caller('I am not sure whether water has reached our first floor.'));
+  assert.equal(uncertain.immediateDanger, 'unknown');
+  assert.equal(uncertain.immediateEvidence, null);
+});
+
+test('reported scam speech does not supply physical safety, zone, count or medical facts', () => {
+  const result = facts(caller('The caller said, "We are trapped in Zone 1. We need oxygen. There are five people." But we are safe near Riverbend footbridge, Zone 3. There are three of us and we need drinking water.'));
+  assert.equal(result.immediateDanger, 'no');
+  assert.equal(result.immediateEvidence, null);
+  assert.match(result.locationText, /Riverbend footbridge, Zone 3/);
+  assert.equal(result.peopleCount, 3);
+  assert.deepEqual(result.needs, ['supplies']);
+});
+
+test('a separate real household danger is preserved after reported contact speech', () => {
+  const flooding = facts(caller('The caller said we were trapped unless we paid. But water is now rising inside our house.'));
+  assert.equal(flooding.immediateDanger, 'yes');
+  assert.match(flooding.immediateEvidence, /water is now rising inside/i);
+  const breathing = facts(caller('The scammer said, "I cannot breathe." My father can’t breathe.'));
+  assert.equal(breathing.immediateDanger, 'yes');
+  assert.equal(breathing.immediateEvidence, 'can’t breathe');
+  assert.equal(facts(caller("The scammer said 'I can't breathe.' I am safe.")).immediateDanger, 'no');
+});
+
+test('negative breathing statements do not become an emergency while a separate current symptom does', () => {
+  assert.equal(facts(caller("My child didn't say he can't breathe. We are safe.")).immediateDanger, 'no');
+  const current = facts(caller("We are not trapped, but my child can't breathe."));
+  assert.equal(current.immediateDanger, 'yes');
+  assert.equal(current.immediateEvidence, "can't breathe");
+});
+
+test('spoken addresses keep explicit response zones available for area matching', () => {
+  assert.equal(facts(caller('We are at 12 Oak Street in Zone 1.')).locationText, '12 Oak Street, Zone 1');
+  assert.equal(facts(caller('Our location is 45 Pine Road, Zone two.')).locationText, '45 Pine Road, Zone two');
+});
+
+test('an explicit current relocation replaces old location without requiring a correction phrase', () => {
+  assert.equal(facts(caller('We are in Zone 1.'), caller('We have moved to Zone 2.')).locationText, 'Zone 2');
+  assert.equal(facts(caller('We are at 12 Oak Street in Zone 1.'), caller('We have moved to 45 Pine Road in Zone 2.')).locationText, '45 Pine Road, Zone 2');
+  assert.match(facts(caller('We are in Zone 1.'), caller('We are now near the Northbank library, Zone 2.')).locationText, /Northbank library, Zone 2/);
+});
+
+test('hypothetical relocation is ignored and explicitly unknown new location clears stale routing', () => {
+  assert.equal(facts(caller('We are in Zone 1.'), caller('If we move to Zone 2, can we find shelter?')).locationText, 'Zone 1');
+  assert.equal(facts(caller('We are in Zone 1.'), caller('We are now at an unknown location.')).locationText, '');
+  assert.equal(facts(caller('We are in Zone 1.'), caller('We are in Zone 2.')).locationText, '');
+});

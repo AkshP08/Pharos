@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!Product/voice-agent/.env.local.example
 Product/.env
 Product/deepspace-host/index.html
 Product/deepspace-host/public/app.js

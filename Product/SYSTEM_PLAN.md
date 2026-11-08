@@ -1,107 +1,107 @@
 # Pharos system plan
 
-Updated 2026-11-07 7:15 PM CST
+Updated 2026-11-07 9:27 PM CST
 
 ## Product shape
 
 Pharos serves two audiences under one disaster incident:
 
-- **Flare is voice-first.** A resident calls the Pharos line and speaks naturally; the voice agent asks a few short questions, confirms what it heard, and creates a structured request for human review. The website form is a fallback for someone who can use it, not the main crisis path. A resident's tone, persistence, or number of repeat messages must not determine priority.
-- **Beacon** gives authorized responders a human-reviewed queue of requests. It displays reported facts, source, time received, and unknown details. It keeps suspicious messages/calls in a separate review lane so they do not drown out people asking for assistance.
+- **Flare is voice-first.** A resident calls the Pharos line and speaks naturally; a voice agent discloses transcription, asks a few short questions, and prepares a request for human review. The website form is a fallback. The demo does not intercept someone's personal carrier calls or automatically move those calls based on location.
+- **Beacon** gives responders a service-area queue. It shows reported facts, the call/transcript record, unknown details, suggested urgency, and why the system suggested it. Scam wording sits in a separate review lane so a warning never blocks a help request.
+- **Pharos Guide** is a small animated Pharaoh in the corner. It answers fixed product and safety questions; it is not a general emergency-advice chatbot.
 
-The names fit together: a **flare** is a request for attention; a **beacon** helps responders find and guide people. “Radar” sounds more like broad surveillance, so Beacon is the better responder name.
+The names fit together: a **flare** is a request for attention; a **beacon** helps responders find and guide people.
 
-## What is connected today
+## Built and connected today
 
-| Service | Verified state | What it can do today |
+| Component | Current implementation | Still needed |
 | --- | --- | --- |
-| DeepSpace | The static Pharos prototype is hosted at `https://signalbridge-hackutd-2026.app.space`. The worker serves files and a health route only. | Publish this frontend. It does not currently provide a database, chatbot model, Photon integration, or resident intake API. |
-| Photon | The Photon MCP developer connection is authorized. Read-only checks found the SignalBridge Spectrum project but no provisioned line/resource, webhook destination, or voice profile. | Let the development assistant inspect/manage Photon resources. This is a separate control-plane connection; the website cannot use it to read messages. |
-| GitHub | Private project repository `AkshP08/signalbridge-hackutd-2026` is connected. | Store and review source. The repo and hosted URL still use the old name; only the product's visible branding is changing to Pharos. |
-| Hugging Face, AIsa, State Farm, T-Mobile Safe Signal | No runtime credentials, redeemed model/service access, or sponsor-provided dataset/API instructions are recorded in the project. | Not connected to the application. The private Hugging Face claim link must come from HARP/organizers; never store it in this repo. |
+| DeepSpace app | Public Pharos site and Worker API. SQLite-backed Durable Object storage keeps incidents, zones, responder profiles, calls, transcript turns, cases, scam reviews, and audit events across reloads. | Deploy the current code revision and configure protected secrets before any real call data. |
+| Call workbench | A synthetic transcript creates a persisted call, case, area match, urgency suggestion, responder eligibility list, and separate scam review using the same server rules as the voice path. | End-to-end Photon/LiveKit phone test. |
+| Voice agent | `Product/voice-agent/agent.py` uses LiveKit Agents with LiveKit Inference STT/LLM/TTS. It sends finalized, speaker-labeled text over a bearer-protected API only after the caller agrees to transcript retention. | LiveKit project, SIP trunk/dispatch rule, agent credentials, Photon Voice line, SIP destination, and a consenting test call. |
+| Location and responder routing | Spoken landmark/address or coordinates are matched against configured response zones. Eligibility checks zone, capabilities, approval, availability, and capacity. The desk can filter cases by area. | Replace fictional areas with an agreed incident map and verified local responder profiles. The prototype has one shared responder password and an optional separate coordinator password, not individual accounts. |
+| Urgency and scam review | Transparent transcript rules return tier/reason and exact wording signals. Scam review is stored separately. | Sponsor guidance, evaluation, and calibration. The rules are not a validated dispatch or fraud model. |
+| Photon | The developer MCP connection is authorized; the SignalBridge project has no provisioned call line or SIP route. | The Photon account owner must choose/configure a line and inspect voice-route cost/security. The $100 wallet was confirmed, but its eligibility for line/voice charges is unknown. No number was purchased. |
 
-The current voice-call panel previews a fictional phone conversation; it does not place a call or use the microphone. The short Flare web form is a fallback that makes a local preview and sends nothing. The scam checker is a local rule demo. The animated corner Guide uses fixed answers and sends nothing to a model.
+The public Worker is in **demo-only** mode until responder password and session secrets are configured. It masks non-synthetic records and allows only synthetic demo interactions. Live call ingest remains disabled until protected responder access and the shared bearer token are set. Demo examples are marked fictional.
 
-## Proposed first real-data slice: call-first
-
-Build one end-to-end, non-emergency test with a consenting teammate before handling any resident data:
-
-1. The test caller dials the approved Photon voice line and hears a brief disclosure that they are speaking with an automated intake helper, plus a way to reach emergency services/human help when appropriate.
-2. Photon routes the call over SIP to LiveKit. A LiveKit voice agent transcribes speech and asks, in order: “Are you in immediate danger?”, “What location or nearby landmark should responders use?”, and “What help is most urgent right now?” It can ask one short follow-up about people affected or a time-critical support need if the caller's answer makes that useful.
-3. The agent accepts ordinary speech, offers keypad/DTMF where supported, tolerates silence/unclear answers, and asks once for clarification. Unanswered details stay **unknown**; the agent must not make the caller repeat a long form or treat silence as low need.
-4. Before creating the report, the agent reads back a very short summary and asks for correction/confirmation. It extracts only the structured facts needed for a responder: safety report, location, requested help, and any volunteered time-critical context. It does not ask for a diagnosis or a ranking against other callers.
-5. A protected backend creates the request and Beacon shows the source as a phone call, timestamp, self-reported details, unknown fields, transcript-derived evidence, and a human-review action. A human owns dispatch and can reorder/clarify.
-6. If transcript content includes high-specificity scam tactics, a separate Beacon review flag quotes the phrase and why it triggered. The voice agent continues to collect the caller's help request; a flag must never end the call, discard the report, or prove intent.
-7. SMS/web form remain backup channels, not prerequisites to asking for help.
-
-The Flare request fields in the current demo are deliberately limited to immediate danger status, nearby location/landmark, number of people, requested support, and optional short details. For a real system, add consent, contact/callback method only when needed, access controls, retention/deletion, and an explicit statement about who can see the information.
-
-## Triage: fair, explainable, and human-owned
-
-We do not know a resident's diagnoses or full circumstances, and people may understandably describe their own case as the most urgent. The product should avoid asking residents to rank themselves against other households. Instead:
-
-- Ask the same core questions of everyone: immediate danger, safe exit/access, time-sensitive support (such as powered life-sustaining equipment), people affected, location, and what help is requested.
-- Record each answer as **self-reported**, with a timestamp and its source. Missing or contradictory answers are **unknown / needs follow-up**, not evidence of low need.
-- Show a suggested work order from observable time-critical facts. Put an explicit imminent danger report first, then time-sensitive essential support, then other requests needing prompt help. Use recency only as a tie-breaker and show the reason next to the order.
-- Keep requests with incomplete locations or no confirmed category in a visible follow-up lane. Never discard them or let message volume/tone push them down.
-- Let a trained human responder change the order and record a short reason. Do not call this medical triage, diagnose people, promise dispatch, or automatically reject a request.
-- Keep scam-review traffic in a separate queue. A possible scam signal should prompt source verification, not block a help request from the same person.
-
-The present queue is only a fictional UI example, not a validated policy. We need the State Farm challenge rubric or approved guidance before describing any ordering as sponsor-approved.
-
-## Voice transcript path: product's primary intake channel
-
-The intended product interaction is an actual telephone call, not a resident filling out a webpage. Photon 2.0 documents inbound and outbound calls over SIP and publishes a LiveKit cookbook for connecting Photon calls to LiveKit rooms. This gives us a concrete voice integration direction. The stable Spectrum messaging docs separately state that voice calls are not ordinary `app.messages` / `app.webhook()` text-message events; that is why call audio should enter over the voice SIP integration instead of being treated like an SMS payload. The current project still has no provisioned line or voice route.
-
-The most coherent path to prototype, if Photon gives the project a compatible SIP destination, is:
+## End-to-end information flow
 
 ```text
-consenting test caller
-  → Pharos number/voice route in Photon 2.0
-  → Photon SIP cookbook connection to LiveKit room
-  → LiveKit voice agent: streaming speech-to-text + short spoken prompts
-  → minimum structured help request + brief read-back confirmation
-  → protected Pharos request API
-  → Beacon human-reviewed call request
-                   ↘ Safe Signal content check → separate review flag + quoted phrase
+caller dials a provisioned Pharos / Photon voice line
+  → Photon routes the call over SIP to LiveKit
+  → LiveKit STT processes speech, including the consent response
+  → agent discloses transcription and sharing; a clear yes is required
+  → after yes, agent asks safety → location → requested help → useful time detail
+  → finalized transcript turns are sent to /api/voice/ingest with a bearer token
+  → at call end, Pharos parses facts, matches area, suggests urgency, checks wording
+  → SQLite-backed storage keeps the call and the linked case/review
+  → Beacon filters by service area and an eligible responder claims the case
+  → a human responder owns any real-world action or dispatch
 ```
 
-Photon's published 2.0 material explicitly says its phone calls connect to voice tools over SIP and names a LiveKit cookbook; LiveKit documents inbound SIP participants joining a room where an agent can answer. So Photon → LiveKit is now the **primary integration to attempt**, rather than treating voice as a stretch item. It still needs actual line/route setup and a consenting end-to-end call before we say it works in our account. Keep the call agent deliberately small: safety, location, requested help, short confirmation, then human review. An unanswered or ambiguous response is retained as unknown and handed to a person, not silently filled by an LLM.
+The agent asks for a short read-back confirmation, but the server derives structured fields from transcript facts; it does not yet accept a separate structured JSON extraction or explicit field-correction event. A caller who corrects themselves can restate the answer in the transcript. A disconnected caller may leave a partial case with unknown fields. The server does not publish an unfinished case to the queue on every utterance; it creates/updates the case when the call ends.
 
-For the first experiment, have a consenting teammate make a phone call and read a fictional flood-help script. Show the captured transcript, the structured fields, and any exact phrases that trigger checks. Analyze the conversation's **content**, not hesitation, accent, emotion, volume, identity, or how insistently the caller asks for help. High-specificity patterns include a demand for money/codes, secrecy, a threat, or an authority claim paired with a risky request. An urgent caller asking for evacuation is not suspicious simply because they sound urgent. Never auto-hang up or block the help request; surface a reason for a responder to check.
+**Audio and consent detail:** LiveKit's speech recognizer has to process audio to recognize “yes” or “no” after the disclosure. Pharos does not store audio, and its Worker refuses to store transcript turns until the consent event is accepted. The spoken notice says transcript text is deleted after 24 hours; the operator may choose a shorter retention period. After expiry, call/case text and scam evidence snippets are scrubbed while summary fields remain. LiveKit/Photon's own transport and retention behavior must be reviewed before a real call.
 
-The Photon Voice guide notes an RTP encryption limitation on the SIP path; confirm the security behavior of the Photon 2.0/LiveKit cookbook route currently offered to this project before testing with anything sensitive. Use fictional speech and consenting teammates only. Do not store raw audio; define transcript consent, retention, deletion, and responder access before enabling real callers.
+## Location and service-area routing
 
-**Transcript-only fallback:** use a short, consented audio file with Hugging Face Automatic Speech Recognition to obtain a transcript, then run the same content check. This is useful for developing the phrase detector, but it does not satisfy the phone-first product experience or prove live call integration. The team's HackUTD offer describes a limited $10 credit; first confirm access through the private HARP link and its terms.
+Ordinary phone calls do not provide Pharos with reliable GPS location. The agent asks for an address or nearby landmark. The backend then:
 
-**Alternative:** Deepgram's direct streaming STT can transcribe audio, but would add a separate account/key. LiveKit inference with its Deepgram integration may reduce the number of providers to wire. No provider should receive real resident audio in this prototype.
+1. extracts the caller's answer to the location question (or a location phrase in the caller's words);
+2. matches an exact configured alias/ZIP, or coordinates inside a configured zone boundary;
+3. records the matched zone, or places the case in **Unassigned · location follow-up**;
+4. lists responders whose approved profile covers that zone, has a matching capability (or `general`), is available, and has remaining case capacity.
 
-## Chatbot scope
+The desk's area filter lets a coordinator inspect each area while preserving urgency ordering inside the chosen area. Unmatched locations stay visible; they are not silently sent to an arbitrary responder. The included Trinity River zones and sample responders are fictional fixtures.
 
-Pharos Guide is currently a local fixed-answer helper for Flare, Beacon, message verification, data boundaries, and the proposed voice path. For a future model-backed bot:
+## Suggested urgency and fairness
 
-- Put the model call behind a server route; never expose an API key in JavaScript.
-- Ground answers in approved local emergency resources and the app's own rules. Do not improvise evacuation instructions, medical guidance, or promises of response.
-- Keep an always-visible route to official emergency channels and human responders.
-- Add request-size limits, rate limits, budget alerts, logging redaction, and an abuse stop switch. DeepSpace AI calls may spend the app owner's credits if the public user has no own token, so do not enable an unmetered public model endpoint.
-- Do not send Flare form data or private messages to the chatbot unless users clearly consent and the data handling is defined.
+We do not know a resident's diagnoses or full circumstances, and people may understandably describe their own case as the most urgent. The voice agent asks the same short core questions rather than asking callers to rank themselves against other households.
 
-## What we need from the team to connect services
+The current server rules behave as follows:
 
-1. **Photon voice line and route:** in Photon, open the Voice cookbook / line calling settings and check how to attach the number to a LiveKit SIP destination. Share screenshots with keys and personal numbers hidden. The Photon project has no provisioned resources yet; the previous choice was to keep using simulated data, so do not provision a number or paid voice route without explicitly changing that choice. Confirm price/credit eligibility before any purchase.
-2. **Photon runtime credentials:** put the runtime project ID and Secret/API key in a local ignored `.env` or a server-side secret setting only. Keep the user's developer OAuth/MCP connection separate from these app credentials; never paste secrets into chat or frontend JavaScript.
-3. **LiveKit account/project:** create a LiveKit project for inbound SIP, configure its inbound trunk/dispatch rule per the Photon cookbook, choose a speech-to-text option, and keep credentials server-side. Confirm region, limits, and pricing before testing.
-4. **Sponsor inputs:** request State Farm's challenge instructions for safe queue criteria and T-Mobile's Safe Signal taxonomy/dataset/API/baseline and evaluation rules. Do not assume an undocumented sponsor API exists.
-5. **Real alert source and geography:** choose the intended region and approved source of warnings. The demo notice is fictional; there is no live alert API today. The phone call path is for incoming help requests; outgoing warning calls need verified alert content and an opt-in/authorized recipient design.
-6. **Data policy and test consent:** agree what data is collected, who can see it, how long it is retained, how a user can delete it, what the voice disclosure says, how transcript consent is handled, and what the caller hears if the agent cannot understand or the request sounds urgent.
-7. **Backend storage and access control:** choose an authenticated responder identity and protected store. The existing DeepSpace Worker has no persistence or access-control rules. Do not publicly expose an unauthenticated emergency queue.
+| Suggested order | Transcript evidence (examples) | What Beacon says |
+| --- | --- | --- |
+| Immediate | Explicit yes to immediate danger, or phrases such as trapped, rising water inside, cannot breathe, unconscious, serious injury. | Caller-reported life-safety concern; human must confirm and use local procedures. |
+| Time-sensitive | Essential medical support such as oxygen, powered device, medication, or dialysis. | Ask about timing/resources; this is not a medical assessment. |
+| Urgent | Evacuation/transport, shelter, or basic supplies, with no immediate-danger statement. | Prompt assistance suggested; responder verifies. |
+| Follow-up | Too little information, uncertain safety, or location that did not match an area. | Keep visible and clarify; missing information is not low priority. |
 
-No actual call, message, or resident information should be used until the team has completed those prerequisites and tested with synthetic content and consenting teammates.
+Calls are sorted by suggested tier, with older cases first inside a tier. Responders can filter the list by zone; eligibility is calculated for that zone and need. The current UI supports claiming and follow-up; it does not implement manual priority overrides with reason capture. No tier is a medical triage standard, sponsor-approved policy, dispatch instruction, or guarantee of response.
 
-## Official technical references
+## Scam wording review
 
-- Photon [Voice over SIP guide](https://photon.codes/docs/spectrum-ts/providers/voice) and [inbound calls](https://photon.codes/docs/spectrum-ts/providers/voice/inbound-calls).
-- Photon [2.0 voice/SIP announcement](https://photon.codes/blog/introducing-photon-2.0) and [Beta Cookbooks](https://photon.codes/docs/beta/cookbooks) (LiveKit connection guide).
-- LiveKit [SIP trunk setup](https://docs.livekit.io/telephony/start/sip-trunk-setup/), [Deepgram STT integration](https://docs.livekit.io/agents/models/stt/deepgram/), and [inference privacy overview](https://docs.livekit.io/agents/models/inference/).
-- Hugging Face [automatic speech recognition inference providers](https://huggingface.co/docs/inference-providers/tasks/automatic-speech-recognition).
-- DeepSpace [AI chat guide](https://docs.deep.space/guides/ai-chat).
+Pharos analyzes transcript/message **content**, never tone, accent, emotionality, hesitation, volume, caller identity, or how insistently someone asks for help. The rule set looks for:
+
+- claimed authority such as a county, relief office, police, or government agency;
+- artificial deadlines and pressure to act;
+- requests for payment, passwords, one-time codes, or sensitive account data;
+- demands to keep the contact secret or avoid independent verification;
+- links/downloads and threats of losing help or being punished.
+
+It records matched evidence phrases. A money/code request combined with pressure gets the highest demo label; multiple weaker signals can get a review label. Urgency alone is not a scam signal. The review suggests independent verification; it cannot authenticate the sender or prove intent. It never hangs up, blocks the call, or lowers/discards a help case.
+
+## Commission the real phone path
+
+1. Review Photon’s official [LiveKit cookbook](https://photon.codes/docs/beta/cookbooks), confirm how to provision the chosen Voice line and connect it to a LiveKit SIP trunk, and check all number/voice usage costs. The prior user choice was to keep using simulated data, so no number is purchased by this plan.
+2. Create a LiveKit Cloud project, inbound SIP trunk/dispatch rule, and `pharos-intake` agent configuration.
+3. Configure server-side DeepSpace secrets: `PHAROS_RESPONDER_PASSWORD`, `PHAROS_COORDINATOR_PASSWORD`, `PHAROS_SESSION_SECRET`, and `PHAROS_INGEST_TOKEN`. Also set `LIVEKIT_URL` and `PHOTON_VOICE_LINE_ID`. Do not expose or commit them.
+4. In `Product/voice-agent`, copy `.env.local.example` to `.env.local`, fill the LiveKit URL/API key/API secret, deployed Pharos URL, and matching ingest token, install with `uv sync`, then run `uv run python agent.py dev`.
+5. Have a consenting teammate use a fictional script. Confirm the disclosure/consent behavior, transcript accuracy, location match/unassigned behavior, urgency evidence, case persistence, 24-hour retention setting, and no raw-audio storage. Only then set `PHAROS_VOICE_ROUTE_READY=true` for the health display.
+
+The LiveKit agent processes speech before consent to recognize the answer. Do not test with a real resident or sensitive information. Photon and LiveKit transport/security and retention terms must be reviewed first. The selected LiveKit Inference services may use credits or incur usage fees.
+
+## External integrations and remaining team inputs
+
+- The current Photon SIP → LiveKit flow does not require a Photon REST API key in the Pharos web app. Photon MCP is a separate developer control connection. A Photon HTTP API credential would only be needed for a later feature that calls Photon APIs directly, such as managing messages/lines from the app.
+- Request State Farm's approved urgency or assistance-coordination guidance and T-Mobile Safe Signal's allowed dataset, tactic taxonomy, baseline, and evaluation requirements. Do not assume an undocumented sponsor API exists.
+- There is no live alert source or outgoing warning-call workflow. The disaster alert shown in the product is fictional. Outgoing warnings would need an authoritative source, recipient opt-in/authorization, and a separate review.
+- The public demo backend uses a shared responder password and optional coordinator password. This is only suitable for a demo; before production it needs individual identity, role management, audit/recovery processes, and reviewed data/privacy policy.
+
+## Technical references
+
+- Photon [Photon 2.0 announcement](https://photon.codes/blog/introducing-photon-2.0), [Beta cookbooks](https://photon.codes/docs/beta/cookbooks), and [voice over SIP guide](https://photon.codes/docs/spectrum-ts/providers/voice).
+- LiveKit [inbound SIP workflow](https://docs.livekit.io/telephony/accepting-calls/workflow-setup/), [voice AI quickstart](https://docs.livekit.io/agents/start/voice-ai/), [Deepgram STT](https://docs.livekit.io/agents/models/stt/deepgram/), and [transcript text](https://docs.livekit.io/agents/multimodality/text/).
+- DeepSpace [project structure](https://docs.deep.space/get-started/project-structure), [deployment](https://docs.deep.space/concepts/deployment), and SQLite Durable Object storage through its Worker-compatible runtime.
+- HackUTD official [challenge page](https://zeroday.hackutd.co/).

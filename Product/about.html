@@ -19,14 +19,16 @@
   <body>
     <p><a href="index.html">← Back to Pharos</a></p>
     <h1>About Pharos</h1>
-    <p>Pharos is a HackUTD 2026 prototype for safer disaster support. <strong>Flare</strong> is the resident-facing experience for a help-request preview and suspicious-message check. <strong>Beacon</strong> is the responder-facing experience for a human-reviewed help queue and a separate suspicious-contact review.</p>
+    <p>Pharos is a HackUTD 2026 prototype for safer disaster support. <strong>Flare</strong> is the voice-first resident intake path. <strong>Beacon</strong> is the responder-facing experience for a human-reviewed help queue and a separate suspicious-contact review.</p>
     <h2>What the demo shows</h2>
     <ul>
       <li>A queue that makes reported urgency clear and keeps missing details visible for human follow-up.</li>
+      <li>A synthetic transcript workbench connected to a persistent backend that creates a tracked call, location-aware case, urgency suggestion, responder eligibility, and separate wording review.</li>
+      <li>A Photon SIP → LiveKit voice-agent implementation for speech-to-text and consented transcript intake. The Photon phone line and SIP route still need setup before real calls can reach it.</li>
       <li>Pressure Trace, which highlights message wording such as a false deadline, a demand for money or codes, or a request not to verify independently.</li>
       <li>A corner guide that answers fixed questions about the prototype; it is not connected to a language model or live emergency services.</li>
     </ul>
-    <div class="note"><strong>Prototype limits:</strong> All examples are synthetic. Flare previews stay in the current browser page and are not sent to Beacon. This page is not connected to Photon messaging or calling, does not receive real emergency requests, does not identify a sender or prove a scam, and does not dispatch responders. A human must review every case and warning.</div>
+    <div class="note"><strong>Prototype limits:</strong> The deployed demo contains synthetic examples only. Its transcript workbench writes to a persistent backend; the help form remains a local preview. The Photon/LiveKit phone route is not configured, the system does not intercept calls on a person's usual phone, and no alert, responder dispatch, identity check, or proven scam finding is provided. A human must review every case and warning.</div>
     <p>The message checker looks only at wording. It does not analyze a caller’s voice, emotion, or identity. A warning means “verify this independently,” not “this is definitely a scam.”</p>
   </body>
 </html>

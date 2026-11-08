@@ -2,7 +2,7 @@
 
 Pharos is a **responder-facing disaster intake desk**. A resident calls the hotline; Pharos collects a brief consented report. Beacon keeps requests ranked by reported urgency and area while separately highlighting requests that need human verification.
 
-[Open Beacon](https://signalbridge-hackutd-2026.app.space) · [Demo runbook](DEMO_RUNBOOK.md) · [Delivery checklist](DELIVERY_CHECKLIST.md)
+[Open Beacon](https://pharos-hackutd-2026.app.space) · [Demo runbook](DEMO_RUNBOOK.md) · [Delivery checklist](DELIVERY_CHECKLIST.md)
 
 ## The current product
 

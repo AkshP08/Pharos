@@ -6,7 +6,7 @@ Submission: **November 8, 2026 at noon CST**. Use consenting teammates and ficti
 
 - **Pharos hotline: (617) 993-9206.** The existing Photon number routes to the automated intake.
 - **Phone A:** the consenting teammate calls and plays the scenarios below. Its private allowlisted number is already configured.
-- **Laptop:** the signed-in responder opens [Beacon](https://signalbridge-hackutd-2026.app.space), reviews evidence, and coordinates fictional responders.
+- **Laptop:** the signed-in responder opens [Beacon](https://pharos-hackutd-2026.app.space), reviews evidence, and coordinates fictional responders.
 - **Phone B:** the second consenting teammate independently calls Pharos as the suspicious caller in scenario 3. It does not receive a relay. Resident enrollment, push, SMS, and the old two-party relay are future work.
 
 Before calling, the maintainer verifies one healthy current hosted intake worker, no duplicate local worker, correct source revision, ring timeout 60 seconds, and 180-second call cap. The new review/audio build must be deployed and verified; an old successful call does not prove the new flow. Check current green QA fingerprints and served `/build.json` against the pushed clean commit. Verify unauthenticated overview and audio requests are rejected.

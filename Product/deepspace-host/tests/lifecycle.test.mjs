@@ -7,7 +7,7 @@ import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 function options(secured = true) {
   return convertV4MiniflareOptions({
     modules: true,
-    scriptPath: new URL('../dist/signalbridge_hackutd_2026/index.js', import.meta.url).pathname,
+    scriptPath: new URL('../dist/pharos_hackutd_2026/index.js', import.meta.url).pathname,
     compatibilityDate: '2025-01-01',
     compatibilityFlags: ['nodejs_compat'],
     durableObjects: { PHAROS_STORE: { className: 'PharosStore', useSQLite: true } },

@@ -6,7 +6,7 @@ Updated November 8, 2026 for the responder-only product. One earlier consenting 
 
 | Resource | State |
 | --- | --- |
-| Photon account | Existing `SignalBridge` project in the [Photon 2.0 Beta console](https://app.beta.photon.codes); stable console is a different surface. |
+| Photon account | Existing project in the [Photon 2.0 Beta console](https://app.beta.photon.codes); stable console is a different surface. |
 | Hotline | **+1 (617) 993-9206**, provisioned by the owner using $2 existing credit. Last observed wallet was $98 before later call reconciliation. |
 | Inbound | Saved authenticated TLS Photon SIP destination, scoped LiveKit inbound trunk, individual dispatch to `pharos-intake`, consenting test-caller allowlist. Ring60seconds, call cap180seconds. |
 | Hosted worker | Existing tracked LiveKit deployment in `voice-agent/livekit.toml`. An earlier hosted version passed synthetic speech/case/area/cleanup QA; the new review/audio image must be checked separately. Old local worker stopped. |

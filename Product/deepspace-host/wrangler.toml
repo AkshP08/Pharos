@@ -1,4 +1,4 @@
-name = "signalbridge-hackutd-2026"
+name = "pharos-hackutd-2026"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat", "assets_navigation_has_no_effect"]
 main = "worker.ts"
@@ -19,7 +19,7 @@ new_sqlite_classes = ["PharosStore"]
 
 [vars]
 DEEPSPACE_APP_ID = "app_01M6W882E96HE85E815QZECT7X"
-APP_NAME = "signalbridge-hackutd-2026"
+APP_NAME = "pharos-hackutd-2026"
 PHAROS_TRANSCRIPT_RETENTION_HOURS = "24"
 
 [dev]

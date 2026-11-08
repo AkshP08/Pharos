@@ -4,7 +4,7 @@ import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 const source = Uint8Array.from({ length: 256 }, (_, i) => i);
 function runtime(t) {
   const mf = new Miniflare(convertV4MiniflareOptions({ modules: true,
-    scriptPath: new URL('../dist/signalbridge_hackutd_2026/index.js', import.meta.url).pathname,
+    scriptPath: new URL('../dist/pharos_hackutd_2026/index.js', import.meta.url).pathname,
     compatibilityDate: '2025-01-01', compatibilityFlags: ['nodejs_compat'],
     durableObjects: { PHAROS_STORE: { className: 'PharosStore', useSQLite: true } },
     serviceBindings: { ASSETS: () => new Response(source, { headers: { 'Content-Type': 'video/mp4', ETag: '"fixture"' } }) },

@@ -1,5 +1,5 @@
 {
-  "name": "signalbridge-deepspace",
+  "name": "pharos-deepspace",
   "version": "0.0.1",
   "engines": {
     "node": ">=22.15.0 <23 || >=24 <25 || >=26 <27",

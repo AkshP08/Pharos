@@ -1,24 +1,80 @@
-# Pharos Photon voice agent
+# Pharos Photon voice runtime
 
-This service accepts inbound SIP calls explicitly routed from a Photon Voice line to a LiveKit SIP trunk. It asks for consent to transcript retention, conducts Pharos's short voice intake, and sends finalized speaker-labeled text turns to the protected Pharos Worker API. It does not save raw audio or send audio to the Worker.
+The runtime has two modes for consenting teammates using fictional scenarios:
 
-**Audio-processing detail:** LiveKit's speech recognition processes the caller's audio, including the yes/no consent response after the agent's first spoken disclosure. Pharos does not persist transcript text until the caller clearly agrees. A caller who declines is not asked intake questions or stored as a transcript.
+- **Intake:** Photon SIP caller → LiveKit STT and short spoken intake → consented finalized text → Pharos → Beacon case. A human responder owns prioritization and real-world action.
+- **Guard:** Photon protected number → consent gate → second SIP leg to a fixed, pre-consenting resident test phone. Only the incoming caller's track is transcribed. Pharos analyzes each finalized utterance and can return a recipient warning before the call ends. Guard calls must be stored as `purpose=guard`, never help cases.
 
-## Run locally
+The guard relay is implemented but has **not been tested against a real trunk or phone**. Its outbound dialing is disabled by default. No account, number, SIP trunk, paid plan, or phone call is provisioned by this repository.
 
-1. Install Python 3.11+ and `uv`.
-2. Copy `.env.local.example` to `.env.local`; fill in the LiveKit project URL/API key/API secret, deployed Pharos URL, and the same random `PHAROS_INGEST_TOKEN` configured in DeepSpace. Keep `.env.local` private.
-3. From this folder, run `uv sync`, then `uv run python agent.py dev`.
-4. Configure the Photon Voice line's inbound SIP destination using Photon’s [LiveKit cookbook](https://photon.codes/docs/beta/cookbooks). The current Photon account has no provisioned line or inbound SIP route, so this agent cannot receive a real phone call yet.
-5. In the Pharos Worker, set `PHAROS_RESPONDER_PASSWORD`, `PHAROS_COORDINATOR_PASSWORD`, `PHAROS_SESSION_SECRET`, and `PHAROS_INGEST_TOKEN`; also set `LIVEKIT_URL` and `PHOTON_VOICE_LINE_ID`. Set `PHAROS_VOICE_ROUTE_READY=true` only after an end-to-end synthetic test call works.
+For repeat help calls, the intake asks whether a caller who is calling back means the same situation or a new request, then collects their current location and needs. No name, case number, or particular phrase is required to receive help. The agent does not retrieve or read previous case facts; a fresh danger report is included even if an older request exists.
 
-The default models use LiveKit Inference for Deepgram Nova 3 speech recognition, Gemma 4 conversation, and Fish Audio speech. LiveKit account access, usage limits, credit, and pricing apply; model IDs can be overridden in `.env.local`.
+Only actual SIP **intake** calls send the inbound `sip.phoneNumber` as `callerNumber` in the authenticated `call.started` event. The runtime drops its transient copy after acknowledgment and never includes the number in later events or logs. Guard calls and WebRTC calls omit this field, even if a browser supplies a SIP-looking attribute. The Worker HMAC-hashes the number for a linkage hint; caller ID does not authenticate a person. Server-side matching also requires explicit same-situation intent and a strong current-location match before updating an eligible existing request. Otherwise the report remains a new case for human review.
 
-## Events sent to Pharos
+## Setup
 
-- `call.started` stores a random Pharos call ID and timestamps, not the LiveKit room name or caller's phone number.
-- `consent` starts or declines transcript retention.
-- `turn` sends final speaker-labeled transcript text only after consent. It updates the call record but does not create a dispatch case on every partial utterance.
-- `call.ended` closes the session and asks the Pharos Worker to analyze the transcript, create/update a help case, match its location, suggest urgency, and create a separate scam review when wording signals are present.
+Use Python 3.11+ (the local tests used Python 3.13 and LiveKit Agents 1.8.11). From this directory:
 
-Pharos keeps synthetic demo data separate from live records and expires live transcript text after 24 hours by default. This prototype does not intercept calls to a person's regular phone; only calls explicitly routed to the Photon test line reach this agent. The shared responder/coordinator passwords are for the hackathon demo, not production account security.
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install 'httpx>=0.27,<1' 'livekit-agents~=1.8.11' 'python-dotenv>=1,<2'
+cp .env.local.example .env.local
+```
+
+If `.env.local` already exists, fill it in rather than replacing it. Set the LiveKit URL/API key/API secret, the deployed Pharos origin, and the same ingest token used by its Worker. Keep credentials private. The runtime loads `.env.local` relative to `agent.py`, even when launched from another directory.
+
+Set `PHAROS_TEST_CALLER_NUMBERS` to the comma-separated E.164 numbers of consenting teammates. All incoming SIP callers must match that list before any model session begins. For a browser-only LiveKit Console test, explicitly set `PHAROS_ALLOW_BROWSER_TESTS=true`; this does not allow unlisted phone callers. Both modes enforce `PHAROS_MAX_CALL_SECONDS` (180 by default, allowed range 30–300). The budget starts at admission before backend retries, model startup, or disclosure; cleanup is registered before connection and always runs, including startup/loop-validation failures. It removes this call's SIP legs before potentially slow transcript/backend flushing. These are test safeguards, not a provider-level spend limit.
+
+Check configuration without contacting any service, then start the agent:
+
+```sh
+.venv/bin/python agent.py --check-config
+.venv/bin/python agent.py dev
+```
+
+If `uv` is installed, `uv sync` and `uv run python agent.py dev` are equivalent. Model calls use LiveKit Inference and its available account credits/limits; they are not free merely because the runtime starts locally. The default model IDs are Deepgram Nova-3, Gemma 4 31B, and Fish Audio S2.1 Pro; override them through the example env settings if needed.
+
+Configure the Photon default Voice profile, an authenticated LiveKit inbound SIP trunk, and an individual-room dispatch rule launching the configured `PHAROS_AGENT_NAME` (default `pharos-intake`). Use the current [Photon LiveKit cookbook](https://photon.codes/docs/beta/cookbooks/voice/livekit). Prefer compatible TLS/SRTP settings on both sides. The development MCP connection is not the website's runtime credentials.
+
+## Optional protected-call guard
+
+Before setting `PHAROS_CALL_MODE=guard`, configure:
+
+- `PHAROS_AGENT_NAME=pharos-guard` and a dispatch rule for this guard worker.
+- `LIVEKIT_OUTBOUND_TRUNK_ID`: authenticated outbound Photon SIP trunk.
+- `PHAROS_GUARD_RESIDENT_NUMBER`: the fixed E.164 number of the consenting test recipient.
+- `PHAROS_GUARD_ALLOWED_CALLERS`: comma-separated E.164 numbers of consenting test callers. This optional narrower guard list falls back to `PHAROS_TEST_CALLER_NUMBERS`. Other callers are rejected before a recipient is dialed.
+- `PHAROS_GUARD_RESIDENT_CONSENTED=true`: the recipient has already opted into this test and transcript warnings.
+- `PHAROS_ENABLE_GUARD_RELAY=true`: explicit operator enable after reviewing call costs.
+- `PHAROS_GUARD_MAX_SECONDS=300`: outbound-leg maximum; the shorter `PHAROS_MAX_CALL_SECONDS` cap also applies.
+
+The resident's phone must be separate from the caller and Photon line and must not forward back into Pharos. The runtime checks for obvious number loops. The incoming caller hears the disclosure and must clearly consent before the resident is dialed. The recipient's prior opt-in is essential because the outbound call joins the shared room as soon as they answer. Two phone legs may incur two provider charges. Use a separate guard dispatch/number or deliberately switch the test dispatch between demos; the current Python SDK allows one registered agent entrypoint per process.
+
+A guard worker does not interrupt a call based on a risk score. It does not play warnings into the shared room where the other caller would hear them. It sends new backend warnings through a private `pharos.warning` room-data topic addressed only to the resident participant identity. **A normal PSTN phone cannot display that room-data message.** Actual SMS or push delivery is the Pharos backend's separate adapter and still requires its credentials/eligible sender/recipient binding. A provider-neutral callback can be supplied to `CallEventStream` for another approved delivery path. Duplicate warning IDs are suppressed.
+
+If either phone participant leaves, or the configured duration expires, the job drains finalized text and removes this call's remaining SIP participants to avoid an orphan billable leg. Intake also removes its phone participant at its duration cap. A failed recipient connection produces a spoken failure notice, not a claim of successful protection.
+
+## Consent and delivery behavior
+
+The pre-LLM hook requires a clear initial yes; qualified or ambiguous answers get one clarification and then stop. A no stops collection deterministically. After consent, an explicit “Stop recording” or “I withdraw consent” closes the local gate before the utterance can be saved or sent to the LLM. The ordered `consent.revoked` event asks Pharos to scrub transcript/evidence/warning access; previously consented minimal help-request facts may remain for human follow-up. The runtime does not promise deletion from providers' transient buffers or unrelated recipient enrollment. If backend revocation is not acknowledged, the caller is told collection stopped but deletion could not be confirmed. Uncertainty about facts (“Yes, not sure where I am”) does not negate clear agreement; contradictory agreement (“Yes, no, stop”) needs clarification. A combined answer such as “Yes, we need a ride near Riverbend” sends the consent acknowledgment first, then preserves the factual remainder once. The LLM cannot run before that acknowledgment because preemptive generation is disabled. LiveKit STT/turn handling still processes the choice before consent; no pre-consent text is delivered to Pharos.
+
+`AgentSession.start(record=False)` explicitly disables this agent's audio, transcript, trace, and log recording, rather than inheriting the dashboard's recording preference. Pharos receives text only. Underlying Photon/LiveKit model and transport processing still applies; review account settings for service-wide retention.
+
+A per-call ordered in-memory outbox delivers:
+
+1. `call.started` with `purpose=intake|guard` and transport `sip|webrtc`; only SIP intake may include `callerNumber` for the server's protected repeat-call linkage. The backend may return a private `warningUrl`.
+2. `consent` before transcript storage.
+3. `turn` with caller/agent role, bounded text, and a monotonic sequence.
+4. `call.ended` after pending turns and SDK final-transcript flush; `deliveryFailed=true` reports incomplete transport. An explicit withdrawal instead sends `consent.revoked`, suppresses queued/new turns and warnings, and never reopens collection.
+
+Transient network/408/425/429/5xx failures retry with the same event ID and body. Permanent failures do not retry. The backend must treat start events idempotently and deduplicate turn sequences. Failures are not silently reported as successful; intake tells the caller it cannot confirm delivery, and completion records transport failure when possible. This outbox is not a disk-backed recovery service: a machine crash can still lose undelivered turns. Raw transcripts/phone numbers/credentials are excluded from this code's log messages.
+
+## Verification
+
+```sh
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+The tests use mocked HTTP/voice callbacks and fictional inputs. They check clear versus ambiguous consent, decline, combined yes/facts, startup configuration, ordered turns, stable retry IDs, permanent errors, duplicate warning suppression, partial completion after a delivery failure, explicit withdrawal without persisting the withdrawal itself, skipped queued turns on revocation, and teardown of phone legs after startup failures or an admission-time deadline. A real SIP call and STT accuracy test is still required after credentials and trunks exist.
+
+Official references: [LiveKit voice quickstart](https://docs.livekit.io/agents/start/voice-ai/), [events and errors](https://docs.livekit.io/reference/agents/events/), [outbound calls](https://docs.livekit.io/telephony/making-calls/outbound-calls/), and [recording options](https://docs.livekit.io/reference/agents/session-recording-options/).

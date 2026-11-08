@@ -1,190 +1,369 @@
-"""Photon SIP → LiveKit voice intake for Pharos.
+"""Photon SIP -> LiveKit voice intake and opt-in protected test-call relay.
 
-This service never stores audio. After disclosing transcription and receiving
-caller consent, it posts text turns to the protected Pharos Worker API. Case
-priority and scam signals are derived server-side from explicit transcript
-evidence; the LLM only conducts the short conversation.
+No audio/transcript/session recording is enabled by this agent. Only finalized,
+consented text turns are delivered to Pharos. Guard mode never speaks warnings
+into a shared call; the backend handles private notification delivery.
 """
-
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
+import sys
 import uuid
+import sys
+
+# Homebrew Python on macOS may lack a default CA bundle. Use the OS trust store;
+# certificate verification remains enabled for LiveKit/Pharos HTTPS and WSS.
+if sys.platform == "darwin":
+    import truststore
+    truststore.inject_into_ssl()
+from pathlib import Path
 from typing import Any
 
-import httpx
 from dotenv import load_dotenv
-from livekit import agents
-from livekit.agents import Agent, AgentServer, AgentSession, TurnHandlingOptions, inference
+from google.protobuf.duration_pb2 import Duration
+from livekit import agents, api, rtc
+from livekit.agents import Agent, AgentServer, AgentSession, StopResponse, inference, llm, room_io
 
-load_dotenv(".env.local")
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+from pharos_runtime import CallEventStream, ConfigurationError, DeliveryError, Settings, VoiceEventClient, is_consent_withdrawal, parse_consent
+
+# Resolve against this file so running from the repo root cannot load another .env.
+load_dotenv(Path(__file__).with_name(".env.local"))
+settings = Settings.from_env(dict(os.environ))
 logger = logging.getLogger("pharos-voice-agent")
-
-API_URL = os.getenv("PHAROS_API_URL", "").rstrip("/")
-INGEST_TOKEN = os.getenv("PHAROS_INGEST_TOKEN", "")
-STT_MODEL = os.getenv("PHAROS_STT_MODEL", "deepgram/nova-3")
-LLM_MODEL = os.getenv("PHAROS_LLM_MODEL", "google/gemma-4-31b-it")
-TTS_MODEL = os.getenv("PHAROS_TTS_MODEL", "fishaudio/s2.1-pro")
-TTS_VOICE = os.getenv("PHAROS_TTS_VOICE", "fa4c9eb3dccc4806b382b40d61c6b10a")
-
-if not API_URL or not INGEST_TOKEN:
-    logger.warning("PHAROS_API_URL or PHAROS_INGEST_TOKEN is not set; transcript delivery will fail until configured")
-
 server = AgentServer()
 
-
-class PharosIntakeAgent(Agent):
-    def __init__(self) -> None:
-        super().__init__(
-            instructions="""
+INTAKE_INSTRUCTIONS = """
 You are Pharos, a brief automated voice intake helper in a disaster scenario.
-You are not emergency dispatch and cannot promise help is coming. Speak in
-short, calm sentences, ask one question at a time, and let the caller interrupt.
+The caller has already agreed to transcript sharing. Do not ask for consent again.
+You are not emergency dispatch and cannot promise help is coming. Speak in short,
+calm sentences, ask one question at a time, and let the caller interrupt.
+Ask these factual questions in order, skipping facts already stated:
+1. Are you in immediate danger right now?
+2. Where are you, or what nearby address or landmark should responders use?
+3. What help do you need most right now?
+4. Only if useful: Is there a time-sensitive need, such as a powered device or a safe way to leave?
+Ask how many people need help only when useful and not already stated.
+If the caller says they are "calling back" or updating a request, ask: "Is this
+about the same situation or a new request?" Then ask "Where are you now?" unless
+they already gave their current location. If return-call intent is unclear, you
+may ask "If you're calling back, is this about the same situation or a new request?"
+Never require the phrase "calling back", a name, or a case number to receive help.
+Gather current facts from this caller; do not read out or assume any previous
+case facts or imply caller ID verifies identity. A new report of danger must be
+included even when the caller says this updates an earlier request. Do not claim
+the reports were merged: the backend and a human responder determine linkage.
+Never ask the caller to rate or compare urgency. Missing or conflicting facts are
+unknown; ask at most one short clarification. Read back brief facts and ask the
+caller to confirm or correct them. Accept corrections rather than repeating old facts.
+Do not request names, passwords, account numbers, payment details, or codes.
+If the caller is checking a suspicious contact, ask what the contact requested.
+Do not claim to hear another phone call. A content warning is not proof of identity.
+For payment/code requests, briefly advise independent verification through an official
+contact. Urgency alone does not prove fraud. Continue collecting any help request.
+Do not give evacuation routes, medical instructions, or claims about live incidents.
+For immediate danger, suggest contacting the local emergency number if they can.
+Tone, accent, emotion, and persistence never determine priority or scam risk.
+The Pharos backend suggests urgency from explicit facts; human responders own action.
+Do not say the case was successfully saved or assistance dispatched: delivery is
+confirmed separately by the server. Say the request is for human review.
+""".strip()
 
-The very first spoken response must disclose: "Speech recognition will
-process what you say so I can understand your choice. If you agree, Pharos
-will save a text transcript and brief request summary for human responders.
-Transcript text is deleted after 24 hours. To continue, say yes. You can hang
-up at any time." Do not collect or repeat personal identifiers. If the caller does
-not clearly consent, ask once for yes or no; if they decline, stop intake and
-say you will not send their answers to Pharos. Never imply that the caller can
-use a keypad unless the phone line has actually configured that option.
-
-After clear consent, ask in this order, skipping a question only if the caller
-already answered it:
-1. "Are you in immediate danger right now?"
-2. "Where are you, or what nearby address or landmark should responders use?"
-3. "What help do you need most right now?"
-4. Only if useful: "Is there a time-sensitive need I should include, such as
-   a powered device or a safe way to leave?"
-Never ask the caller to rate or compare their urgency. Do not diagnose. Treat
-missing, uncertain, or contradictory answers as unknown and ask at most one
-short clarification. Read back only the brief facts and ask the caller to
-confirm or correct them. A correction should replace the earlier fact.
-
-If the caller says they are checking a suspicious call or message, ask them to
-quote or summarize the exact request. Do not claim to hear or inspect another
-phone call that is not routed into this Pharos line. Do not call anyone a
-scammer. If the wording includes a request for money, passwords, or codes, say
-briefly not to pay or share codes and to verify using an official number found
-independently. Urgency alone is not proof of fraud. If the same caller needs
-disaster help, continue collecting that request.
-
-Do not give evacuation routes, medical instructions, legal advice, or live
-incident claims. If a caller describes immediate danger, tell them to contact
-their local emergency number if they can, while continuing the short intake.
-Never hang up, block, or lower a help request based on tone, accent, emotion,
-hesitation, persistence, or a scam score. The Pharos server computes suggested
-priority from explicit transcript facts; a human responder owns dispatch.
-""".strip(),
-        )
-
-
-async def post_event(event: str, call_id: str, **payload: Any) -> None:
-    if not API_URL or not INGEST_TOKEN:
-        return
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(
-                f"{API_URL}/api/voice/ingest",
-                headers={"Authorization": f"Bearer {INGEST_TOKEN}"},
-                json={"event": event, "callId": call_id, **payload},
-            )
-            response.raise_for_status()
-    except Exception:
-        logger.exception("Could not deliver voice event %s for call %s", event, call_id)
+INTAKE_DISCLOSURE = (
+    "This is the Pharos automated test hotline, not emergency dispatch. "
+    "Speech recognition processes what you say to understand your choice. "
+    "If you agree, Pharos will save a short-lived text transcript and request summary "
+    "for human responders. Say yes to agree, or no to stop. You can hang up at any time."
+)
+GUARD_DISCLOSURE = (
+    "This is a Pharos protected test line. Before connecting you, speech recognition "
+    "processes your choice. If you agree, your side of the conversation will be "
+    "transcribed and checked for potentially manipulative requests. A short-lived "
+    "text transcript and wording warnings may be shared with the consenting recipient. "
+    "Say yes to agree, or no to stop."
+)
 
 
 def yes_or_no(value: str) -> bool | None:
-    normalized = re.sub(r"[^a-z ]", " ", value.lower())
-    if re.search(r"\b(not sure|unsure|i do not know|i don t know|i dont know)\b", normalized):
-        return None
-    if re.search(r"\b(no|nope|i do not|i don t|i dont|decline|stop)\b", normalized):
-        return False
-    if re.search(r"\b(yes|yeah|yep|i agree|i consent)\b", normalized):
-        return True
-    return None
+    """Compatibility helper for the original prototype."""
+    return parse_consent(value).decision
 
 
-@server.rtc_session(agent_name="pharos-intake")
-async def pharos_intake(ctx: agents.JobContext) -> None:
-    call_id = f"ph-call-{uuid.uuid4()}"
-    await post_event("call.started", call_id)
-    session = AgentSession(
-        stt=inference.STT(model=STT_MODEL, language="en"),
-        llm=inference.LLM(model=LLM_MODEL),
-        tts=inference.TTS(model=TTS_MODEL, voice=TTS_VOICE),
-        turn_handling=TurnHandlingOptions(turn_detection=inference.TurnDetector()),
-    )
-    consented = False
-    consent_decided = False
-    sequence = 0
-    delivery_tail: asyncio.Task[None] | None = None
+class PharosAgent(Agent):
+    def __init__(self, stream: CallEventStream, ctx: agents.JobContext, *, guard: bool,
+                 start_relay: Any = None) -> None:
+        super().__init__(instructions=INTAKE_INSTRUCTIONS if not guard else "Silent consent-gated call monitor.",
+                         **({"llm": None} if guard else {}))
+        self.stream = stream
+        self.ctx = ctx
+        self.guard = guard
+        self.start_relay = start_relay
+        self.consent_attempts = 0
+        self.stopped = False
+        self.persisted_user_ids: set[str] = set()
 
-    def schedule(event: str, **payload: Any) -> None:
-        nonlocal delivery_tail
-        previous = delivery_tail
+    async def _say_then_stop(self, message: str) -> None:
+        self.stopped = True
+        try:
+            await self.session.say(message, allow_interruptions=False)
+        finally:
+            self.session.shutdown(drain=True)
+            self.ctx.shutdown("intake stopped")
 
-        async def deliver_in_order() -> None:
-            if previous is not None:
-                await previous
-            await post_event(event, call_id, **payload)
-
-        delivery_tail = asyncio.create_task(deliver_in_order())
-
-    @session.on("conversation_item_added")
-    def on_conversation_item(event: Any) -> None:
-        nonlocal consented, consent_decided, sequence
-        item = getattr(event, "item", None)
-        role = getattr(item, "role", "")
-        text = getattr(item, "text_content", None) or getattr(item, "raw_text_content", None)
-        if not text:
-            return
-        text = str(text).strip()
-        if role == "user" and not consent_decided:
-            decision = yes_or_no(text)
-            if decision is None:
+    async def on_user_turn_completed(self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage) -> None:
+        # This hook executes before the LLM; preemptive generation is disabled.
+        text = (new_message.text_content or "").strip()
+        if self.stopped or not text:
+            raise StopResponse()
+        if self.stream.consented and is_consent_withdrawal(text):
+            # Do not persist or forward the withdrawal utterance to the LLM.
+            self.stopped = True
+            self.persisted_user_ids.add(new_message.id)
+            try:
+                await self.stream.revoke()
+            except DeliveryError:
+                message = "I stopped transcript collection. I could not confirm removal of the earlier Pharos transcript; please contact the operator about deletion."
+            else:
+                message = "I stopped transcript collection and removed the Pharos transcript. Basic request facts may remain for human follow-up. Goodbye."
+            await self._say_then_stop(message)
+            raise StopResponse()
+        try:
+            if not self.stream.consented:
+                answer = parse_consent(text)
+                self.consent_attempts += 1
+                if answer.decision is None:
+                    if self.consent_attempts < 2:
+                        await self.session.say("Please say yes if you agree to transcript sharing, or no to stop.", allow_interruptions=False)
+                    else:
+                        await self.stream.consent(False)
+                        await self._say_then_stop("I did not receive clear consent. I will not send your answers to Pharos. Goodbye.")
+                    raise StopResponse()
+                await self.stream.consent(answer.decision)
+                if not answer.decision:
+                    await self._say_then_stop("I will not send your answers to Pharos. Goodbye.")
+                    raise StopResponse()
+                self.persisted_user_ids.add(new_message.id)
+                if answer.remainder:
+                    task = self.stream.turn("caller", answer.remainder)
+                    if task is not None:
+                        await task
+                    new_message.content = [answer.remainder]
+                else:
+                    new_message.content = ["I consent. Please begin the short intake."]
+                if self.guard:
+                    await self.session.say("Thank you. Connecting your protected test call now.", allow_interruptions=False)
+                    await self.start_relay()
+                    raise StopResponse()
                 return
-            consent_decided = True
-            consented = decision
-            schedule("consent", consent=decision)
-            return
-        if not consented:
-            return
-        if role not in ("user", "assistant"):
-            return
-        mapped_role = "caller" if role == "user" else "agent"
-        schedule("turn", role=mapped_role, text=text[:1800], sequence=sequence)
-        sequence += 1
+            self.persisted_user_ids.add(new_message.id)
+            task = self.stream.turn("caller", text)
+            if task is not None:
+                await task
+            if self.guard:
+                # Listen to the bound caller track, without replying into the two-party call.
+                raise StopResponse()
+        except DeliveryError:
+            await self._say_then_stop("Pharos cannot save this request reliably right now. I cannot confirm it reached responders. Please use another trusted contact if you can.")
+            raise StopResponse()
 
-    @session.on("close")
-    def on_session_close(_: Any) -> None:
-        if consented:
-            schedule("call.ended")
-        elif not consent_decided:
-            schedule("consent", consent=False)
 
-    async def flush_events() -> None:
-        if delivery_tail is not None:
-            await delivery_tail
+async def run_session(ctx: agents.JobContext, config: Settings) -> None:
+    config.validate()
+    guard = config.mode == "guard"
+    resident_identity = f"pharos-resident-{uuid.uuid4().hex[:12]}"
+    inbound: rtc.RemoteParticipant | None = None
+    client: VoiceEventClient | None = None
+    stream: CallEventStream | None = None
+    session: AgentSession | None = None
+    relay_created = False
+    ended = asyncio.Event()
+    cleanup_task: asyncio.Task[None] | None = None
+    deadline = asyncio.get_running_loop().time() + config.max_call_seconds
 
-    ctx.add_shutdown_callback(flush_events)
+    def request_end(reason: str) -> None:
+        ended.set()
+        ctx.shutdown(reason)
 
-    await session.start(room=ctx.room, agent=PharosIntakeAgent())
-    await ctx.connect()
-    await session.say(
-        "Speech recognition will process what you say so I can understand your choice. "
-        "If you agree, Pharos will save a text transcript and brief request summary for human responders. "
-        "Transcript text is deleted after 24 hours. To continue, say yes. You can hang up at any time.",
-        allow_interruptions=False,
-    )
+    async def perform_cleanup() -> None:
+        ended.set()
+        # Release phone legs before potentially slow transcript/backend flushing.
+        # Individual dispatch rooms contain this call only. If startup failed
+        # before selecting its participant, still release any admitted SIP leg.
+        identities = {resident_identity} if guard else set()
+        if inbound is not None and inbound.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
+            identities.add(inbound.identity)
+        elif inbound is None:
+            identities.update(participant.identity for participant in ctx.room.remote_participants.values()
+                              if participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP)
+        for identity in identities:
+            if identity in ctx.room.remote_participants:
+                try:
+                    await ctx.api.room.remove_participant(api.RoomParticipantIdentity(room=ctx.room.name, identity=identity))
+                except Exception:
+                    logger.error("Could not clean up a test call participant")
+        if session is not None:
+            try:
+                await asyncio.wait_for(session.aclose(), timeout=8)
+            except Exception:
+                logger.error("Voice session did not finish its final transcript flush")
+        if stream is not None:
+            try:
+                await asyncio.wait_for(stream.finish(), timeout=25)
+            except (DeliveryError, TimeoutError):
+                logger.error("Call finalization was not acknowledged; responder follow-up may be needed")
+        if client is not None:
+            await client.close()
+
+    async def cleanup() -> None:
+        nonlocal cleanup_task
+        if cleanup_task is None:
+            cleanup_task = asyncio.create_task(perform_cleanup())
+        await asyncio.shield(cleanup_task)
+
+    # Registered before connect, participant admission, validation of routing,
+    # call.started retries, model initialization, or spoken disclosure.
+    ctx.add_shutdown_callback(cleanup)
+    try:
+        # This budget covers the whole admitted lifetime, not just conversation
+        # after model/TTS startup. Cancellation always enters the finally block.
+        async with asyncio.timeout(config.max_call_seconds):
+            await ctx.connect(auto_subscribe=agents.AutoSubscribe.AUDIO_ONLY)
+            inbound = await ctx.wait_for_participant()
+            caller_number = inbound.attributes.get("sip.phoneNumber", "")
+            is_phone = inbound.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+            if is_phone and caller_number not in config.test_caller_numbers:
+                request_end("caller not allowed for this test")
+                return
+            if not is_phone and not config.allow_browser_tests:
+                request_end("browser voice test not enabled")
+                return
+            if guard:
+                photon_number = inbound.attributes.get("sip.trunkPhoneNumber", "")
+                if not is_phone or caller_number not in (config.guard_allowed_callers or config.test_caller_numbers):
+                    raise ConfigurationError("Guard caller is not on the configured consenting test allowlist")
+                if config.guard_resident_number in {caller_number, photon_number}:
+                    raise ConfigurationError("Guard resident must use a separate, non-forwarded test phone to avoid a call loop")
+
+            client = VoiceEventClient(config.api_url, config.ingest_token)
+
+            async def on_warning(warning: dict[str, Any]) -> None:
+                # Normal PSTN phones need the backend's notification adapter.
+                if guard and relay_created:
+                    await ctx.room.local_participant.publish_data(
+                        json.dumps({"type": "pharos.warning", "warning": warning}),
+                        reliable=True, topic="pharos.warning", destination_identities=[resident_identity],
+                    )
+                logger.info("New wording warning received; level=%s", warning.get("level", "review"))
+
+            stream = CallEventStream(client, f"ph-call-{uuid.uuid4()}", purpose=config.mode,
+                                     on_warning=on_warning, transport="sip" if is_phone else "webrtc",
+                                     caller_number=caller_number if is_phone and not guard else None)
+            await stream.start()
+
+            async def start_relay() -> None:
+                nonlocal relay_created
+                if relay_created:
+                    return
+                remaining = max(1, int(deadline - asyncio.get_running_loop().time()))
+                try:
+                    await ctx.api.sip.create_sip_participant(api.CreateSIPParticipantRequest(
+                        sip_trunk_id=config.outbound_trunk_id,
+                        sip_call_to=config.guard_resident_number,
+                        room_name=ctx.room.name,
+                        participant_identity=resident_identity,
+                        participant_name="Consenting test recipient",
+                        hide_phone_number=True,
+                        wait_until_answered=True,
+                        ringing_timeout=Duration(seconds=min(30, remaining)),
+                        max_call_duration=Duration(seconds=min(config.guard_max_seconds, remaining)),
+                        participant_attributes={"pharos.role": "resident"},
+                    ), timeout=min(40, remaining))
+                    relay_created = True
+                except Exception:
+                    logger.error("Protected test relay could not connect; inspect the provider dashboard privately")
+                    if session is not None:
+                        await session.say("The recipient could not be connected. This test call will end.", allow_interruptions=False)
+                        session.shutdown(drain=True)
+                    request_end("recipient unavailable")
+
+            session = AgentSession(
+                stt=inference.STT(model=config.stt_model, language="en"),
+                **({} if guard else {"llm": inference.LLM(model=config.llm_model)}),
+                tts=inference.TTS(model=config.tts_model, voice=config.tts_voice),
+                turn_handling={"turn_detection": inference.TurnDetector()},
+                preemptive_generation=False,
+                session_close_transcript_timeout=3.0,
+            )
+            intake = PharosAgent(stream, ctx, guard=guard, start_relay=start_relay)
+
+            @session.on("conversation_item_added")
+            def on_item(event: Any) -> None:
+                item = event.item
+                if item.role == "assistant" and stream.consented:
+                    stream.turn("agent", item.text_content or "")
+                elif item.role == "user" and stream.consented and item.id not in intake.persisted_user_ids:
+                    intake.persisted_user_ids.add(item.id)
+                    text = item.text_content or ""
+                    if is_consent_withdrawal(text):
+                        intake.stopped = True
+                        stream.begin_revocation()
+                        request_end("transcript consent withdrawn")
+                    else:
+                        # Closing can commit a final transcript without the reply
+                        # hook. Preserve only still-consented facts, once.
+                        stream.turn("caller", text)
+
+            @session.on("close")
+            def on_close(_: Any) -> None:
+                request_end("voice session closed")
+
+            @ctx.room.on("participant_disconnected")
+            def on_participant_left(participant: rtc.RemoteParticipant) -> None:
+                if participant.identity in {inbound.identity, resident_identity}:
+                    request_end("call participant disconnected")
+
+            await session.start(
+                room=ctx.room, agent=intake, record=False,
+                room_options=room_io.RoomOptions(
+                    participant_identity=inbound.identity,
+                    audio_input=room_io.AudioInputOptions(pre_connect_audio=False),
+                    text_input=False, text_output=False, close_on_disconnect=True,
+                ),
+            )
+            await session.say(GUARD_DISCLOSURE if guard else INTAKE_DISCLOSURE, allow_interruptions=False)
+            await ended.wait()
+    except TimeoutError:
+        request_end("configured test duration reached")
+    except BaseException:
+        request_end("voice session could not continue")
+        raise
+    finally:
+        await cleanup()
+
+@server.rtc_session(agent_name=settings.agent_name)
+async def pharos_intake(ctx: agents.JobContext) -> None:
+    await run_session(ctx, settings)
 
 
 def main() -> None:
+    if "--help" in sys.argv or "-h" in sys.argv:
+        agents.cli.run_app(server)
+        return
+    if "--check-config" in sys.argv:
+        try:
+            settings.validate()
+        except (ConfigurationError, ValueError) as error:
+            print(str(error))
+            raise SystemExit(1) from None
+        print(f"Configuration shape is valid; mode={settings.mode}. No network request or phone call was made.")
+        return
+    try:
+        settings.validate()
+    except (ConfigurationError, ValueError) as error:
+        raise SystemExit(str(error)) from None
     agents.cli.run_app(server)
 
 

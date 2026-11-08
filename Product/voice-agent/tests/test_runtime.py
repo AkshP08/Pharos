@@ -18,6 +18,19 @@ from pharos_runtime import CallEventStream, ConfigurationError, DeliveryError, S
 
 
 class ConsentTests(unittest.TestCase):
+    def test_failure_diagnostic_contains_only_code_locations_and_safe_identifiers(self):
+        secret = 'private transcript +12025550199 api-key-private'
+        try:
+            raise AttributeError(secret, name='missing_sdk_method', obj=secret)
+        except AttributeError as error:
+            diagnostic = agent.safe_failure_diagnostic(error)
+        self.assertIn('class=AttributeError attribute=missing_sdk_method', diagnostic)
+        self.assertIn('test_runtime.py:', diagnostic)
+        self.assertNotIn(secret, diagnostic)
+        self.assertNotIn(str(Path(__file__).parent), diagnostic)
+        unsafe = AttributeError(secret, name=secret, obj=secret)
+        self.assertIn('attribute=withheld', agent.safe_failure_diagnostic(unsafe))
+
     def test_requires_clear_initial_yes(self):
         for answer in ("I heard him say yes", "not sure", "maybe yes", "yes but only if", "yesterday", "okay"):
             self.assertIsNone(parse_consent(answer).decision, answer)
@@ -197,7 +210,207 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         callback.assert_not_awaited()
 
 
+class SemanticSchedulingTests(unittest.IsolatedAsyncioTestCase):
+    benign = {"shouldWarn": False, "level": "low", "signals": []}
+    risky = {"shouldWarn": True, "level": "high", "signals": [
+        {"kind": "money_or_secret", "evidence": "fictional payment"},
+        {"kind": "isolation", "evidence": "keep this private"},
+    ]}
+
+    class ControlledReviewer:
+        def __init__(self, *, return_after_cancel=False):
+            self.requests = []
+            self.entered = asyncio.Queue()
+            self.aclose = AsyncMock()
+            self.return_after_cancel = return_after_cancel
+            self.cancelled = False
+
+        async def review(self, text):
+            self.requests.append(text)
+            result = asyncio.get_running_loop().create_future()
+            self.entered.put_nowait(result)
+            try:
+                return await result
+            except asyncio.CancelledError:
+                self.cancelled = True
+                if self.return_after_cancel:
+                    return SemanticSchedulingTests.risky
+                raise
+
+    async def fixture(self, reviewer, *, post_hook=None, purpose='guard', enabled=True):
+        events = []
+        callback = AsyncMock()
+        async def post(event, call_id, **payload):
+            events.append((event, payload))
+            if post_hook:
+                return await post_hook(event, payload)
+            return {"accepted": True}
+        factory = MagicMock(return_value=reviewer)
+        stream = CallEventStream(SimpleNamespace(post=post), 'semantic-fixture', purpose=purpose,
+                                 semantic_review=enabled, reviewer_factory=factory, on_warning=callback)
+        await stream.start()
+        return stream, events, callback, factory
+
+    async def next_review(self, reviewer):
+        return await asyncio.wait_for(reviewer.entered.get(), timeout=1)
+
+    async def drain_review(self, stream):
+        task = stream._semantic_task
+        if task is not None:
+            await asyncio.wait_for(asyncio.shield(task), timeout=1)
+
+    async def test_starts_only_after_consented_caller_ack_and_uses_semantic_mode(self):
+        reviewer = self.ControlledReviewer()
+        turn_entered, release_turn = asyncio.Event(), asyncio.Event()
+        async def post(event, payload):
+            if event == 'turn':
+                turn_entered.set()
+                await release_turn.wait()
+            return {"accepted": True}
+        stream, events, _, factory = await self.fixture(reviewer, post_hook=post)
+        self.assertEqual(events[0][1]['analysisMode'], 'semantic')
+        self.assertIsNone(stream.turn('caller', 'Never analyze before consent'))
+        await stream.consent(True)
+        pending = stream.turn('caller', 'Consented fictional caller facts')
+        await turn_entered.wait()
+        factory.assert_not_called()
+        release_turn.set()
+        await pending
+        result = await self.next_review(reviewer)
+        self.assertEqual(reviewer.requests, ['Consented fictional caller facts'])
+        result.set_result(self.benign)
+        await self.drain_review(stream)
+        self.assertEqual(events[-1], ('pressure.review', {'sequence': 0, 'review': self.benign}))
+        await stream.finish()
+        reviewer.aclose.assert_awaited_once()
+
+    async def test_coalesces_latest_caller_snapshot_without_blocking_outbox_or_using_agent_text(self):
+        reviewer = self.ControlledReviewer()
+        stream, events, callback, _ = await self.fixture(reviewer)
+        await stream.consent(True)
+        await stream.turn('caller', 'First fictional statement')
+        first_result = await self.next_review(reviewer)
+        await stream.turn('agent', 'Assistant wording must not enter the review')
+        await stream.turn('caller', 'Second fictional statement')
+        await stream.turn('caller', 'Third fictional statement')
+        self.assertEqual(len(reviewer.requests), 1)
+        first_result.set_result(self.risky)
+        latest_result = await self.next_review(reviewer)
+        self.assertEqual(reviewer.requests[-1], 'First fictional statement\nSecond fictional statement\nThird fictional statement')
+        self.assertFalse(any(event.startswith('pressure.') for event, _ in events))
+        latest_result.set_result(self.benign)
+        await self.drain_review(stream)
+        self.assertEqual([payload['sequence'] for event, payload in events if event == 'pressure.review'], [3])
+        callback.assert_not_awaited()
+        await stream.finish()
+
+    async def test_late_server_warning_is_suppressed_after_new_caller_turn_and_deduped(self):
+        reviewer = self.ControlledReviewer()
+        posting, release = asyncio.Event(), asyncio.Event()
+        async def post(event, payload):
+            if event == 'pressure.review':
+                if payload['sequence'] == 0:
+                    posting.set()
+                    await release.wait()
+                return {"accepted": True, "warning": {"id": "same-warning", "level": "high"}}
+            return {"accepted": True}
+        stream, _, callback, _ = await self.fixture(reviewer, post_hook=post)
+        await stream.consent(True)
+        await stream.turn('caller', 'First fictional statement')
+        (await self.next_review(reviewer)).set_result(self.risky)
+        await posting.wait()
+        await stream.turn('caller', 'New fictional statement')
+        release.set()
+        (await self.next_review(reviewer)).set_result(self.risky)
+        await self.drain_review(stream)
+        callback.assert_awaited_once()
+        await stream.turn('caller', 'Third fictional statement')
+        (await self.next_review(reviewer)).set_result(self.risky)
+        await self.drain_review(stream)
+        callback.assert_awaited_once()
+        await stream.finish()
+
+    async def test_revoke_and_finish_cancel_drop_context_and_ignore_even_cancellation_resistant_results(self):
+        for operation in ('revoke', 'finish'):
+            with self.subTest(operation=operation):
+                reviewer = self.ControlledReviewer(return_after_cancel=True)
+                stream, events, callback, _ = await self.fixture(reviewer)
+                await stream.consent(True)
+                await stream.turn('caller', 'Previously consented fictional statement')
+                await self.next_review(reviewer)
+                if operation == 'revoke':
+                    task = stream.begin_revocation()
+                    self.assertFalse(stream.consented)
+                else:
+                    # finish's synchronous gate executes before its first await.
+                    task = asyncio.create_task(stream.finish())
+                    await asyncio.sleep(0)
+                self.assertEqual(stream._semantic_parts, [])
+                self.assertIsNone(stream._semantic_pending)
+                self.assertIsNone(stream.turn('caller', 'Never collect after stopping'))
+                await task
+                await stream.finish()
+                self.assertTrue(reviewer.cancelled)
+                reviewer.aclose.assert_awaited_once()
+                self.assertIsNone(stream._semantic_reviewer)
+                self.assertFalse(any(event.startswith('pressure.') for event, _ in events))
+                callback.assert_not_awaited()
+
+    async def test_hard_review_budget_reports_unavailable_instead_of_fallback(self):
+        reviewer = SimpleNamespace(review=AsyncMock(return_value=self.benign), aclose=AsyncMock())
+        stream, events, callback, _ = await self.fixture(reviewer)
+        await stream.consent(True)
+        for index in range(10):
+            await stream.turn('caller', f'Fictional caller statement {index}')
+            await self.drain_review(stream)
+        self.assertEqual(reviewer.review.await_count, 8)
+        self.assertEqual([payload['sequence'] for event, payload in events if event == 'pressure.unavailable'], [8, 9])
+        self.assertTrue(all(set(payload) == {'sequence'} for event, payload in events if event == 'pressure.unavailable'))
+        callback.assert_not_awaited()
+        await stream.finish()
+
+    async def test_review_failure_is_neutral_and_failed_turn_ack_never_starts_inference(self):
+        reviewer = SimpleNamespace(review=AsyncMock(side_effect=RuntimeError('private provider body')), aclose=AsyncMock())
+        stream, events, callback, _ = await self.fixture(reviewer)
+        await stream.consent(True)
+        await stream.turn('caller', 'Fictional private caller statement')
+        await self.drain_review(stream)
+        self.assertEqual(events[-1], ('pressure.unavailable', {'sequence': 0}))
+        callback.assert_not_awaited()
+        await stream.finish()
+        async def fail_turn(event, payload):
+            if event == 'turn':
+                raise DeliveryError('fixture delivery failure')
+            return {'accepted': True}
+        stream, events, _, factory = await self.fixture(reviewer, post_hook=fail_turn)
+        await stream.consent(True)
+        with self.assertRaises(DeliveryError):
+            await stream.turn('caller', 'Unacknowledged fictional statement')
+        factory.assert_not_called()
+        self.assertFalse(any(event.startswith('pressure.') for event, _ in events))
+        await stream.finish()
+
+    async def test_intake_and_disabled_guard_never_enable_or_import_review(self):
+        for purpose, enabled in (('intake', True), ('guard', False)):
+            with self.subTest(purpose=purpose, enabled=enabled):
+                reviewer = self.ControlledReviewer()
+                stream, events, _, factory = await self.fixture(reviewer, purpose=purpose, enabled=enabled)
+                self.assertNotIn('analysisMode', events[0][1])
+                await stream.consent(True)
+                await stream.turn('caller', 'Fictional caller statement')
+                await stream.finish()
+                factory.assert_not_called()
+                reviewer.aclose.assert_not_awaited()
+
+
 class AgentConsentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_real_sdk_turn_options_disable_preconsent_speculation(self):
+        session = agent.AgentSession(turn_handling={"turn_detection": "manual", "preemptive_generation": {"enabled": False}})
+        try:
+            self.assertFalse(session.options.turn_handling["preemptive_generation"]["enabled"])
+        finally:
+            await session.aclose()
+
     def agent(self):
         client = SimpleNamespace(post=AsyncMock(return_value={"accepted": True}))
         stream = CallEventStream(client, "fixture", purpose="intake")
@@ -265,6 +478,32 @@ class LifetimeTests(unittest.IsolatedAsyncioTestCase):
                                   api=SimpleNamespace(room=SimpleNamespace(remove_participant=remover)),
                                   shutdown=MagicMock(), add_shutdown_callback=MagicMock())
         return config, context, remover
+
+    async def test_intake_opening_is_brief_interruptible_and_contains_consent_choice(self):
+        self.assertLessEqual(len(agent.INTAKE_DISCLOSURE.split()), 25)
+        self.assertNotRegex(agent.INTAKE_DISCLOSURE.lower(), r'photon|livekit|sdk|speech recognition|software')
+        self.assertIn('transcript', agent.INTAKE_DISCLOSURE)
+        self.assertIn('yes or no', agent.INTAKE_DISCLOSURE)
+        config, context, remover = self.fixture()
+        client = SimpleNamespace(post=AsyncMock(return_value={"accepted": True}), close=AsyncMock())
+        handlers = {}
+        def on(name):
+            def register(callback):
+                handlers[name] = callback
+                return callback
+            return register
+        async def say(*args, **kwargs):
+            handlers['close'](None)
+        session = SimpleNamespace(on=on, start=AsyncMock(), say=AsyncMock(side_effect=say), aclose=AsyncMock())
+        with patch.object(agent, 'VoiceEventClient', return_value=client), \
+                patch.object(agent, 'AgentSession', return_value=session) as constructor, \
+                patch.object(agent.inference, 'STT'), patch.object(agent.inference, 'LLM'), \
+                patch.object(agent.inference, 'TTS'), patch.object(agent.inference, 'TurnDetector'):
+            await agent.run_session(context, config)
+        session.say.assert_awaited_once_with(agent.INTAKE_DISCLOSURE, allow_interruptions=True)
+        self.assertEqual(constructor.call_args.kwargs['turn_handling']['preemptive_generation'], {'enabled': False})
+        remover.assert_awaited_once()
+        self.assertEqual([call.args[0] for call in client.post.await_args_list], ['call.started', 'consent'])
 
     async def test_start_event_failure_still_closes_admitted_phone_leg(self):
         config, context, remover = self.fixture()

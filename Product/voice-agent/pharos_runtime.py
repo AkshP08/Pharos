@@ -82,6 +82,7 @@ class Settings:
     test_caller_numbers: tuple[str, ...] = ()
     allow_browser_tests: bool = False
     max_call_seconds: int = 180
+    semantic_guard_review: bool = True
 
     @classmethod
     def from_env(cls, environ: dict[str, str]) -> Settings:
@@ -106,6 +107,7 @@ class Settings:
             test_caller_numbers=tuple(value.strip() for value in environ.get("PHAROS_TEST_CALLER_NUMBERS", "").split(",") if value.strip()),
             allow_browser_tests=environ.get("PHAROS_ALLOW_BROWSER_TESTS") == "true",
             max_call_seconds=int(environ.get("PHAROS_MAX_CALL_SECONDS", "180")),
+            semantic_guard_review=environ.get("PHAROS_SEMANTIC_GUARD_REVIEW", "true") == "true",
         )
 
     def validate(self) -> None:
@@ -194,13 +196,21 @@ class VoiceEventClient:
 
 
 WarningCallback = Callable[[dict[str, Any]], Awaitable[None]]
+ReviewerFactory = Callable[[], Any]
+
+
+def _semantic_reviewer() -> Any:
+    # Intake and old/mock runtimes never import inference for this feature.
+    from pharos_semantic import SemanticReviewer
+    return SemanticReviewer()
 
 
 class CallEventStream:
     """One in-memory ordered outbox per call, with sequence-idempotent retries."""
     def __init__(self, client: VoiceEventClient, call_id: str, *, purpose: str,
                  on_warning: WarningCallback | None = None, transport: str = "sip",
-                 caller_number: str | None = None):
+                 caller_number: str | None = None, semantic_review: bool = False,
+                 reviewer_factory: ReviewerFactory | None = None):
         self.client = client
         self.call_id = call_id
         self.purpose = purpose
@@ -223,17 +233,131 @@ class CallEventStream:
         self.delivery_failed = False
         self.revoked = False
         self._revocation_task: asyncio.Task[dict[str, Any]] | None = None
+        self.semantic_review = purpose == "guard" and semantic_review
+        self._reviewer_factory = reviewer_factory or _semantic_reviewer
+        self._semantic_reviewer: Any = None
+        self._semantic_task: asyncio.Task[None] | None = None
+        self._semantic_close_task: asyncio.Task[None] | None = None
+        self._semantic_stopped = False
+        self._semantic_parts: list[str] = []
+        self._semantic_pending: tuple[int, str] | None = None
+        self._latest_caller_sequence: int | None = None
+        self._semantic_requests = 0
 
     async def start(self) -> None:
         if self._started:
             return
         payload = {"purpose": self.purpose, "transport": self.transport}
+        if self.semantic_review:
+            payload["analysisMode"] = "semantic"
         if self._caller_number is not None:
             payload["callerNumber"] = self._caller_number
         result = await self.client.post("call.started", self.call_id, **payload)
         self.warning_url = result.get("warningUrl")
         self._started = True
         self._caller_number = None
+
+    def _semantic_current(self, sequence: int) -> bool:
+        return (self.semantic_review and self.consented and not self.closed and not self.revoked
+                and not self._semantic_stopped and sequence == self._latest_caller_sequence)
+
+    async def _notify_warning(self, result: dict[str, Any], *, semantic_sequence: int | None = None) -> None:
+        if self.revoked or (semantic_sequence is not None and not self._semantic_current(semantic_sequence)):
+            return
+        warning = result.get("warning")
+        if isinstance(warning, dict) and warning.get("id") and warning["id"] not in self._seen_warnings:
+            self._seen_warnings.add(warning["id"])
+            if self.on_warning:
+                try:
+                    await self.on_warning(warning)
+                except Exception:
+                    logger.error("Recipient warning callback failed; warning delivery needs review")
+
+    def _acknowledge_semantic_caller(self, sequence: int, text: str) -> None:
+        if not self.semantic_review or self.closed or self.revoked or not self.consented:
+            return
+        # Append only an acknowledged, consented caller turn. Assistant text and
+        # private phone metadata never enter the reviewer context.
+        self._semantic_parts.append(text)
+        self._semantic_pending = (sequence, "\n".join(self._semantic_parts))
+        if self._semantic_task is None:
+            self._semantic_task = asyncio.create_task(self._review_semantic_pending())
+
+    async def _post_semantic(self, event: str, sequence: int, **payload: Any) -> None:
+        if not self._semantic_current(sequence):
+            return
+        try:
+            result = await self.client.post(event, self.call_id, sequence=sequence, **payload)
+        except DeliveryError:
+            # Optional analysis never blocks/fails the transcript outbox, and no
+            # heuristic substitutes a warning for an unavailable review.
+            logger.error("Semantic review acknowledgment unavailable")
+            return
+        await self._notify_warning(result, semantic_sequence=sequence)
+
+    async def _review_semantic_pending(self) -> None:
+        snapshot = ""
+        try:
+            while self._semantic_pending is not None and not self._semantic_stopped:
+                sequence, snapshot = self._semantic_pending
+                self._semantic_pending = None
+                if not self._semantic_current(sequence):
+                    snapshot = ""
+                    continue
+                if self._semantic_requests >= 8:
+                    snapshot = ""
+                    await self._post_semantic("pressure.unavailable", sequence)
+                    continue
+                self._semantic_requests += 1
+                try:
+                    if self._semantic_reviewer is None:
+                        self._semantic_reviewer = self._reviewer_factory()
+                    review = await self._semantic_reviewer.review(snapshot)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # Invalid output, timeout, provider/factory failure all mean
+                    # unavailable. No transcript or provider exception is logged.
+                    snapshot = ""
+                    await self._post_semantic("pressure.unavailable", sequence)
+                else:
+                    snapshot = ""
+                    await self._post_semantic("pressure.review", sequence, review=review)
+        finally:
+            snapshot = ""
+            self._semantic_task = None
+
+    def _stop_semantic(self) -> None:
+        # This runs synchronously at the same gate as close/withdrawal; no later
+        # turn or late model result may restart analysis or retain our context.
+        self._semantic_stopped = True
+        self._semantic_parts.clear()
+        self._semantic_pending = None
+        self._latest_caller_sequence = None
+        task = self._semantic_task
+        if task is not None:
+            task.cancel()
+        if not self.semantic_review or self._semantic_close_task is not None:
+            return
+
+        async def close_reviewer() -> None:
+            if task is not None:
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            reviewer, self._semantic_reviewer = self._semantic_reviewer, None
+            if reviewer is not None:
+                try:
+                    await reviewer.aclose()
+                except Exception:
+                    logger.error("Semantic reviewer cleanup unavailable")
+
+        self._semantic_close_task = asyncio.create_task(close_reviewer())
+
+    async def _close_semantic(self) -> None:
+        if self._semantic_close_task is not None:
+            await asyncio.shield(self._semantic_close_task)
 
     def enqueue(self, event: str, **payload: Any) -> asyncio.Task[dict[str, Any]]:
         previous = self._tail
@@ -248,15 +372,9 @@ class CallEventStream:
             except DeliveryError:
                 self.delivery_failed = True
                 raise
-            warning = result.get("warning")
-            if not self.revoked and isinstance(warning, dict) and warning.get("id") and warning["id"] not in self._seen_warnings:
-                self._seen_warnings.add(warning["id"])
-                if self.on_warning:
-                    try:
-                        await self.on_warning(warning)
-                    except Exception:
-                        # The stored/server-delivered warning survives a transient room-data error.
-                        logger.error("Recipient warning callback failed; warning delivery needs review")
+            if event == "turn" and payload.get("role") == "caller":
+                self._acknowledge_semantic_caller(payload["sequence"], payload["text"])
+            await self._notify_warning(result)
             return result
 
         task = asyncio.create_task(deliver())
@@ -282,6 +400,8 @@ class CallEventStream:
             raise ValueError("Unsupported voice role")
         sequence = self.sequence
         self.sequence += 1
+        if role == "caller" and self.semantic_review:
+            self._latest_caller_sequence = sequence
         return self.enqueue("turn", role=role, text=text.strip()[:1800], sequence=sequence)
 
     def begin_revocation(self) -> asyncio.Task[dict[str, Any]]:
@@ -292,6 +412,7 @@ class CallEventStream:
         self.closed = True
         self.warning_url = None
         self._caller_number = None
+        self._stop_semantic()
         if self._revocation_task is None:
             previous = self._tail
 
@@ -302,7 +423,10 @@ class CallEventStream:
                     except DeliveryError:
                         self.delivery_failed = True
                 # A prior delivery failure must not prevent privacy revocation.
-                return await self.client.post("consent.revoked", self.call_id)
+                try:
+                    return await self.client.post("consent.revoked", self.call_id)
+                finally:
+                    await self._close_semantic()
 
             self._revocation_task = asyncio.create_task(revoke_after_pending())
         return self._revocation_task
@@ -315,10 +439,12 @@ class CallEventStream:
         if self._finish_task is None:
             self.closed = True
             self._caller_number = None
+            self._stop_semantic()
             self._finish_task = asyncio.create_task(self._finish())
         await asyncio.shield(self._finish_task)
 
     async def _finish(self) -> None:
+        await self._close_semantic()
         if self.revoked:
             try:
                 await self.revoke()

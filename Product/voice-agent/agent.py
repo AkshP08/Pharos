@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import sys
+import traceback
 import uuid
 
 # Homebrew Python on macOS may lack a default CA bundle. Use the OS trust store;
@@ -40,13 +41,16 @@ INTAKE_INSTRUCTIONS = """
 You are Pharos, a brief automated voice intake helper in a disaster scenario.
 The caller has already agreed to transcript sharing. Do not ask for consent again.
 You are not emergency dispatch and cannot promise help is coming. Speak in short,
-calm sentences, ask one question at a time, and let the caller interrupt.
-Ask these factual questions in order, skipping facts already stated:
-1. Are you in immediate danger right now?
-2. Where are you, or what nearby address or landmark should responders use?
-3. What help do you need most right now?
-4. Only if useful: Is there a time-sensitive need, such as a powered device or a safe way to leave?
-Ask how many people need help only when useful and not already stated.
+calm sentences and let the caller interrupt. Get to the situation and location
+immediately after consent. If neither is known, ask: "What's happening, and where
+are you now?" If they already described their situation, ask only for their
+current location when missing. An address or nearby landmark is enough.
+Collect only missing, useful facts: current danger, current location, and the
+help needed most. Ask how many people need help or a time-sensitive need only
+when essential and not already stated. Never prolong the call to complete a form.
+When the caller reports immediate danger, skip routine readbacks and confirmation
+questions. Preserve their stated facts immediately, ask only for a missing
+location or an essential need, and keep every reply especially short.
 If the caller says they are "calling back" or updating a request, ask: "Is this
 about the same situation or a new request?" Then ask "Where are you now?" unless
 they already gave their current location. If return-call intent is unclear, you
@@ -57,8 +61,9 @@ case facts or imply caller ID verifies identity. A new report of danger must be
 included even when the caller says this updates an earlier request. Do not claim
 the reports were merged: the backend and a human responder determine linkage.
 Never ask the caller to rate or compare urgency. Missing or conflicting facts are
-unknown; ask at most one short clarification. Read back brief facts and ask the
-caller to confirm or correct them. Accept corrections rather than repeating old facts.
+unknown; ask at most one short clarification when it changes the help needed.
+For a calm caller, a brief confirmation is optional when useful. Accept
+corrections rather than repeating old facts.
 Do not request names, passwords, account numbers, payment details, or codes.
 If the caller is checking a suspicious contact, ask what the contact requested.
 Do not claim to hear another phone call. A content warning is not proof of identity.
@@ -73,10 +78,8 @@ confirmed separately by the server. Say the request is for human review.
 """.strip()
 
 INTAKE_DISCLOSURE = (
-    "This is the Pharos automated test hotline, not emergency dispatch. "
-    "Speech recognition processes what you say to understand your choice. "
-    "If you agree, Pharos will save a short-lived text transcript and request summary "
-    "for human responders. Say yes to agree, or no to stop. You can hang up at any time."
+    "Pharos test line, not emergency dispatch. "
+    "May I share a short transcript with responders? Say yes or no."
 )
 GUARD_DISCLOSURE = (
     "This is a Pharos protected test line. Before connecting you, speech recognition "
@@ -85,6 +88,20 @@ GUARD_DISCLOSURE = (
     "text transcript and wording warnings may be shared with the consenting recipient. "
     "Say yes to agree, or no to stop."
 )
+
+
+def safe_failure_diagnostic(error: BaseException) -> str:
+    """Expose code locations and identifier names, never values or frame locals."""
+    identifier = lambda value: value if isinstance(value, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", value) else "withheld"
+    error_class = identifier(type(error).__name__)
+    attribute = identifier(getattr(error, "name", None))
+    frames = []
+    for frame in traceback.extract_tb(error.__traceback__)[-8:]:
+        filename = Path(frame.filename).name
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]{0,99}", filename):
+            filename = "withheld"
+        frames.append(f"{filename}:{frame.lineno}")
+    return f"voice.failure class={error_class} attribute={attribute} frames={','.join(frames) or 'none'}"
 
 
 def yes_or_no(value: str) -> bool | None:
@@ -260,7 +277,8 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
 
             stream = CallEventStream(client, f"ph-call-{uuid.uuid4()}", purpose=config.mode,
                                      on_warning=on_warning, transport="sip" if is_phone else "webrtc",
-                                     caller_number=caller_number if is_phone and not guard else None)
+                                     caller_number=caller_number if is_phone and not guard else None,
+                                     semantic_review=guard and config.semantic_guard_review)
             await stream.start()
 
             async def start_relay() -> None:
@@ -293,8 +311,7 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
                 stt=inference.STT(model=config.stt_model, language="en"),
                 **({} if guard else {"llm": inference.LLM(model=config.llm_model)}),
                 tts=inference.TTS(model=config.tts_model, voice=config.tts_voice),
-                turn_handling={"turn_detection": inference.TurnDetector()},
-                preemptive_generation=False,
+                turn_handling={"turn_detection": inference.TurnDetector(), "preemptive_generation": {"enabled": False}},
                 session_close_transcript_timeout=3.0,
             )
             intake = PharosAgent(stream, ctx, guard=guard, start_relay=start_relay)
@@ -333,11 +350,13 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
                     text_input=False, text_output=False, close_on_disconnect=True,
                 ),
             )
-            await session.say(GUARD_DISCLOSURE if guard else INTAKE_DISCLOSURE, allow_interruptions=False)
+            await session.say(GUARD_DISCLOSURE if guard else INTAKE_DISCLOSURE, allow_interruptions=not guard)
             await ended.wait()
     except TimeoutError:
         request_end("configured test duration reached")
-    except BaseException:
+    except BaseException as error:
+        if not isinstance(error, asyncio.CancelledError):
+            logger.error(safe_failure_diagnostic(error))
         request_end("voice session could not continue")
         raise
     finally:

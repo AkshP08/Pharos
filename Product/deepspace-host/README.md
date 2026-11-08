@@ -1,27 +1,44 @@
 # Pharos DeepSpace host
 
-This folder builds the deployed Pharos interface and Worker API. Product sources live one level up in `Product/`. The Worker uses SQLite-backed Durable Object storage and serves both the API and static assets.
+This folder builds the responder interface, private recipient warning PWA, and Worker API from maintained sources one level up in `Product/`. SQLite-backed Durable Object storage persists calls, changing cases, ownership, warnings, and audit events. The latest revision still awaits production deployment; actual Photon audio and phone-notification delivery remain unverified.
 
-## Build and deploy
+## Build, test, and deploy
 
-- `npm run build` copies the maintained `Product/` interface into the host and builds the Worker/assets.
-- `npx deepspace auth whoami` checks the signed-in DeepSpace account.
-- `npx deepspace deploy` publishes the working tree to `https://signalbridge-hackutd-2026.app.space`.
-- After a deployment, check `/api/health` and open the app. The synthetic transcript workbench should create a persisted call and case.
+```sh
+npm run typecheck
+WRANGLER_LOG_PATH=/tmp/pharos-wrangler-build.log npm run build
+npm test
+```
 
-The public app starts in demo-only mode until responder/session secrets are configured. In demo-only mode, API responses expose only synthetic records. Use fictional responder names/organizations in the public profile form. To enable protected live intake, configure the variables in `../.env.example` in DeepSpace's secret/variable settings. Never put real secrets in this repository, static assets, or frontend code.
+Build copies the maintained interface/PWA assets, compiles the Worker, and removes generated local secret files from output. Tests never load `.dev.vars` or call external services; Miniflare tests need local loopback sockets. Most recent completed verification: **93 Worker/client/domain/notification tests passed**, including repeat-case regressions. The separate voice suite passed **22 tests**. Local results do not prove real audio or notification delivery.
 
-Live voice events are accepted at `/api/voice/ingest` only with the shared `PHAROS_INGEST_TOKEN` and after responder authentication is configured. The route requires call start, explicit consent, ordered transcript turns, and call end. The Pharos API receives text only; the LiveKit agent receives the call audio.
+Check the existing authenticated account with `npx deepspace auth whoami`. Eleven selected app secrets have already been uploaded using merge semantics and apply at deployment; publish with `npx deepspace deploy`. Do not upload platform credentials from the local environment or replace unrelated deployment secrets. After deployment, check `/api/auth/ok`, `/api/health`, login protection, and the persisted synthetic workbench flow.
+
+Without responder/session secrets, the API exposes and mutates only synthetic demo records. Protected intake requires `PHAROS_RESPONDER_PASSWORD`, `PHAROS_SESSION_SECRET`, and `PHAROS_INGEST_TOKEN`; use a separate `PHAROS_COORDINATOR_PASSWORD` for profile approval. Keep secrets server-side and untracked. Shared passwords and the area filter are not individual identity or per-area authorization.
+
+## Behavior
+
+- Consent-gated ordered events update partial cases during calls; retries are idempotent and incomplete delivery requests follow-up.
+- Repeat SIP intake reports use an internal keyed phone-number hint plus explicit same-situation intent, a substantial current-location match, and one eligible recent open case from an ended call. Raw phone numbers are not persisted or returned. Unknown/ambiguous/shared-location and overlapping reports remain separate. Latest snapshots/history and reassessment pass local regression tests.
+- Human priority changes require a reason. Claim/follow-up ownership and resolution/reopening account for responder capacity; changed coverage requires assignment review.
+- Guard calls generate separate deduplicated warnings, never help cases. Recipient pre-enrollment supports later guard warnings; Web Push and optional disabled SMS distinguish provider acceptance from device display.
+- Scheduled retention scrubs live text/evidence, access, and caller linkage within at most 24 hours. Minimal structured help facts may remain. Withdrawal stops collection and scrubs the relevant evidence/access.
 
 ## API surface
 
-- `GET /api/health` — storage, auth mode, transcript retention, and route-config status.
-- `GET /api/overview` and `GET /api/cases?zone=<id>` — responder dashboard data and area-filtered ranked cases.
-- `POST /api/demo/calls` — process an explicitly synthetic transcript through the same analysis rules.
-- `POST /api/scam/analyze` — run the transparent content-only wording review.
-- `POST /api/responders` and `POST /api/responders/<id>/approval` — register and approve area/capability profiles.
-- `POST /api/cases/<id>/claim` and `/status` — claim a matched case or set its review state.
-- `POST /api/voice/ingest` — protected LiveKit events for `call.started`, `consent`, `turn`, and `call.ended`.
-- `POST /api/auth/login` and `/logout`, `GET /api/auth/status` — responder/coordinator session handling.
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/auth/ok`, `GET /api/health` | Deployment health, auth/retention, route status. |
+| `GET /api/overview`, `GET /api/cases?zone=<id>` | Protected dashboard and ranked area cases; synthetic-only in demo mode. |
+| `POST /api/demo/calls`, `POST /api/scam/analyze` | Fictional workbench and content-only pressure review. |
+| `POST /api/responders`, `POST /api/responders/<id>/approval` | Profile registration and coordinator approval. |
+| `POST /api/cases/<id>/claim`, `/status`, `/priority`, `/followup-owner` | Assignment, lifecycle, reasoned priority, and accountable follow-up. |
+| `POST /api/voice/ingest` | Bearer-protected `call.started`, `consent`, ordered `turn`, `call.ended`, and `consent.revoked`. |
+| `POST /api/guard/enrollment` | Authorized private 24-hour fixed test-recipient enrollment. |
+| `GET /api/guard/status`, `POST /api/guard/subscribe`, `/unsubscribe` | Recipient-token-scoped warnings and push subscriptions. |
+| `POST /api/guard/received` | Signed alert-specific device-display receipt. |
+| `POST /api/auth/login`, `/logout`, `GET /api/auth/status` | Responder/coordinator sessions. |
 
-See [the product README](../README.md), [system plan](../SYSTEM_PLAN.md), and [Photon setup](../PHOTON_SETUP.md) for the call path, triage rules, data limits, and remaining setup.
+Web Push needs server VAPID keys/subject and explicit recipient permission; SMS remains disabled without eligible credentials/sender and approved costs. The Photon number, default SIP profile, LiveKit inbound trunk, and intake dispatch exist. Saving Photon SIP authentication/destination and filling the consenting caller allowlist remain pending. Set `PHAROS_VOICE_ROUTE_READY=true` only after a real Photon call succeeds. MongoDB and Tiger Data are future options, not current dependencies.
+
+See [the product README](../README.md), [system plan](../SYSTEM_PLAN.md), [Photon setup](../PHOTON_SETUP.md), and [voice runtime](../voice-agent/README.md) for setup, limits, and account gates.

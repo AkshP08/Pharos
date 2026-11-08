@@ -1,71 +1,68 @@
 # Photon setup for Pharos
 
-Updated 2026-11-07 9:27 PM CST
+Updated November 8, 2026. No actual Photon call or resident phone banner is verified yet.
 
-## Chosen integration
-
-Pharos uses Photon for the **phone route**. The intended live flow is:
+## Integration and current account gate
 
 ```text
-Photon Voice line → SIP → LiveKit voice agent/STT → consented transcript → Pharos Worker → Beacon
+Photon number → SIP → LiveKit intake/STT → consented text → Pharos Worker → Beacon
+Photon protected call → consent → fixed test-phone relay → pressure evidence → private warning PWA
 ```
 
-The Pharos Worker, persistent store, call/session model, transcript analysis, area/urgency routing, and Python LiveKit agent are now implemented. Photon does not hand a phone transcript to the app simply because “Voice” was selected in onboarding. The Photon Voice line and its SIP route to LiveKit must still be provisioned and tested.
+The local implementation includes the intake/guard runtime, persistent partial cases, conservative returning-caller linkage, during-call pressure analysis, recipient pre-enrollment, Web Push, and an optional disabled Photon SMS adapter. The current revision still awaits production deployment. A development MCP connection does not carry call audio or constitute the product integration.
 
-The app does not need a Photon REST API key for this specific SIP route. Photon MCP is connected to Codex as a developer control-plane tool; it does not stream the call into the website. A Photon API key would be needed only if a future feature makes direct HTTP API calls from Pharos.
+- Correct Photon 2.0 console: [Beta dashboard](https://app.beta.photon.codes). The stable dashboard is a different surface and initially showed different projects.
+- Existing Beta project: `SignalBridge`, on Messaging Free. The owner provisioned **+1 (617) 993-9206** (`pho_res_01m6wx9yt0eh7v7afn2chrc96t`). The $2 number charge used existing credit; wallet balance is **$98**, leaving **$3** of the authorized $5 test budget.
+- The number renews at **$2/month until released**. The owner authorized one US number and up to **$5 total existing credit**, with **no out-of-pocket charge, paid plan, or SMS campaign upgrade**. SMS activation and 10DLC remain pending; SMS is not allowed/enabled.
+- An earlier automated purchase returned `402 ENTITLEMENT_REQUIRED` and the Beta UI exposed a card gate. The owner subsequently completed number provisioning. That earlier failed attempt did not create the number.
+- LiveKit authentication succeeded. A default Photon SIP profile, inbound trunk `ST_woG6x8w9CBQY`, and dispatch rule `SDR_RbC59XSmabTo` for `pharos-intake` now exist. The Photon TLS destination form is prepared; the owner must enter the generated SIP authentication and save it. The consenting caller allowlist is still pending. No outbound guard trunk or actual audio/STT call is verified.
 
-## Current Photon project status
+## Finish the help-call route
 
-- The `SignalBridge` project exists in the connected Photon organization and is on the **Messaging Free** plan. The $0 base-fee period was reported through Dec 7, 2026.
-- The organization wallet showed **$100.00 USD available**. The billing check did not confirm whether the credit covers a voice line, SIP, or usage charges.
-- The project has no provisioned number/resource and no voice/SIP route. No number has been purchased. The user's earlier decision was to keep using simulated data; that choice remains in force unless changed.
-- Photon listed $2 pay-in-advance for a US local number; carrier/usage costs may be separate. Check exact voice pricing and wallet eligibility in the dashboard before the owner decides to provision a line.
-- Photon MCP OAuth is connected for developer-side project/billing operations. No credentials or tokens are stored in this repository.
+1. Finish the owner-only credential handoff: enter the generated SIP authentication and save the prepared Photon TLS destination. The number, default Voice profile, inbound trunk, and intake dispatch already exist; do not provision duplicates.
+2. Check the saved route against the current [Photon LiveKit cookbook](https://photon.codes/docs/beta/cookbooks/voice/livekit), including compatible transport/security settings. A configured route is not proof that a call works.
+3. Eleven selected app secrets have been uploaded with merge semantics and apply at deployment. They include protected responder/coordinator access, session/ingest values, LiveKit/route settings, and VAPID configuration; unrelated platform secrets were not replaced. Keep `PHAROS_VOICE_ROUTE_READY=false` until the real path passes.
+4. Fill the ignored `voice-agent/.env.local` in place; do not overwrite existing credentials. Set the deployed app URL/shared ingest token and `PHAROS_TEST_CALLER_NUMBERS` to consenting teammates' E.164 numbers. Keep all credentials and test numbers out of Git and logs.
+5. Install/run using [the voice runtime instructions](voice-agent/README.md). The runtime enforces an incoming caller allowlist and an admission-time duration cap (180 seconds by default). These safeguards are not a provider-level spend ceiling.
+6. Test disclosure, decline, clear consent, partial updates before hang-up, location matching, disconnect/cleanup, persistence, and a worsening callback. Same-number linkage is a short-lived keyed hint plus explicit same-situation/current-location checks, not identity verification. Use fictional facts only.
+7. Verify the published responder flow, then mark route-ready only after an actual Photon call succeeds end to end.
 
-## Set up a consenting synthetic call
+LiveKit STT processes audio to recognize the consent choice. Pharos stores text only after consent, stores no raw audio, and explicitly disables agent recording. Withdrawal stops collection and requests evidence/access/linkage scrubbing; minimal prior help facts may remain. Provider transport/model processing and retention still apply.
 
-1. In Photon, open the existing SignalBridge project and follow Photon 2.0's [LiveKit cookbook](https://photon.codes/docs/beta/cookbooks). Confirm the Voice line type, inbound SIP routing, number/line requirement, transport security, and total charges before provisioning anything.
-2. In LiveKit Cloud, create the project and inbound SIP trunk/dispatch rule that sends the Photon call to an agent named `pharos-intake`.
-3. Configure these secrets/variables in the DeepSpace Worker:
-   - `PHAROS_RESPONDER_PASSWORD`
-   - `PHAROS_COORDINATOR_PASSWORD` (separate password for approving new responder profiles)
-   - `PHAROS_SESSION_SECRET` (long random signing secret)
-   - `PHAROS_INGEST_TOKEN` (random bearer token shared only with the agent)
-   - `LIVEKIT_URL`
-   - `PHOTON_VOICE_LINE_ID`
-   - `PHAROS_VOICE_ROUTE_READY=true` only after successful end-to-end testing
-4. In `Product/voice-agent`, copy `.env.local.example` to `.env.local` and fill in the LiveKit URL/API key/API secret, the deployed Pharos URL, and the same `PHAROS_INGEST_TOKEN`. Keep `.env.local` private and untracked.
-5. Run `uv sync` and `uv run python agent.py dev`. Call the test number from a consenting teammate using only a fictional script.
-6. Confirm the voice disclosure and consent flow, transcript accuracy, area matching, suggested urgency/reason, persistent call/case display, and expiry behavior. Do not call the system live until these pass.
+## Protected-call warning test
 
-**Consent detail:** LiveKit's speech recognition must process the caller's audio to understand their yes/no answer after the spoken disclosure. Pharos does not write transcript turns to its database until the caller clearly says yes; it does not store raw audio. The LiveKit/Photon services still process call media, so review their security/retention terms and use fictional content for this prototype.
+Guard mode is implemented but disabled until configured. It requires a separate fixed consenting test recipient, an outbound SIP trunk, explicit relay/recipient-consent flags, and review of both call legs' costs. Incoming caller consent precedes dialing the recipient. Guard calls never become help cases, and only incoming caller audio is transcribed.
 
-## Why automatic personal-call transfer is not part of this build
+Before calling, a signed-in responder uses **Enroll a test phone** to obtain the private 24-hour recipient link. Open/install the warning PWA on that phone and explicitly enable notifications. Installation and background-push support depend on the browser/OS. The private link is a credential: do not put it in logs, screenshots, or the submission. The current enrollment is a fixed demo-recipient scope, not a multi-user resident directory.
 
-Pharos can track and analyze a call only after the caller dials a number routed to the Pharos/Photon line. The website cannot see a person's cellular location or intercept/redirect their normal carrier calls. Automatically routing ordinary calls based on affected-area location requires separate carrier/phone operating-system integration. Native call screening APIs also do not provide a general website with a live transcript from arbitrary personal calls.
+A normal PSTN phone cannot display LiveKit room-data warnings. The Web Push adapter supplies the phone-notification path; the foreground PWA also polls for warnings. Configure server-only `PHAROS_VAPID_PUBLIC_KEY`, `PHAROS_VAPID_PRIVATE_KEY`, and `PHAROS_VAPID_SUBJECT`. No actual banner is confirmed yet. Provider acceptance, device-reported display, and a person reading a warning are different events.
 
-For the demo, the caller dials the Pharos test line directly. The voice agent asks for a location or landmark and the backend matches it to configured response areas. If it cannot match the location, the case stays unassigned and flagged for follow-up.
+Optional SMS requires `PHAROS_SMS_ENABLED=true`, Photon project/API credentials, an eligible sender, and a fixed opted-in test recipient. It remains disabled. SMS registration/eligibility is unresolved and the owner has not approved a campaign upgrade. The SIP-only path does not require a Photon REST key in the web app; this SMS adapter does.
 
-## Sponsor challenge alignment
+## Observed prices and spending boundary
 
-- **Photon:** phone-call experience and routing through Photon Voice/SIP into a voice agent. The current code is ready for integration but has no live Photon route yet.
-- **State Farm:** help-request processing, explainable urgency suggestions, area/capability matching, case claim, and human-owned response. Confirm the challenge's specific criteria and do not call the current rules sponsor-approved.
-- **T-Mobile Safe Signal:** transcript/message content checks for specific pressure tactics, with phrase evidence and a verification action. Do not call a sender a scammer; a content pattern cannot prove identity or intent. Request the sponsor's approved dataset, taxonomy, baseline, and evaluation requirements before making performance claims.
+These are the account/documentation observations made for this session, not a promise of an all-in bill. Recheck the specific quote before a charge.
 
-## Other channels and credits
+| Item | Observed price | Detail |
+| --- | --- | --- |
+| Messaging Free | $0 base fee | Resources and usage are separate. |
+| One US number | $2/month | Provisioned using $2 credit; $98 wallet remains; recurring until released. |
+| US/Canada voice | $0.013 per billed minute per leg | Answered calls round up to a whole minute; a two-phone relay has two legs. |
+| SMS | $0.01 per part plus carrier fees | Sender/campaign eligibility still unresolved. |
+| 10DLC campaign | $20 submission; $15/month activated campaign | Not approved for this build. |
+| LiveKit Build | Listed $0/month; 1,000 SIP minutes, 1,000 hosted-agent minutes, $2.50 inference credit | Separate allowances; account billing/overage behavior still needs checking. No paid upgrade selected. |
 
-- **SMS** can be a supporting message/report path later; no line or runtime messaging integration is currently set up.
-- **iMessage** is optional and overlaps with SMS for the first demo.
-- **WhatsApp** adds Meta Business API setup and is out of initial scope unless the target users/challenge require it.
-- **Hugging Face $10 credit** is not required for this build because LiveKit Inference is selected for STT/LLM/TTS. The HackUTD claim link is private and must come from HARP/organizers if the team later wants to try it.
-- Do not sign up for, provision, or use a paid route without the project owner reviewing the terms and costs.
+The approved cap is **$5 existing Photon credit and $0 cash**; **$2 is spent and $3 remains in that test budget**. Model/STT/TTS charges consume separate LiveKit allowances or credits. Do not assume an account credit makes every service or renewal free. The authoritative pricing/account checks and failed provisioning attempt belong in `PROJECT_LOG.md`.
 
-## Official references
+## Demo claims and sponsor scope
 
-- [Photon 2.0 announcement](https://photon.codes/blog/introducing-photon-2.0)
-- [Photon Beta cookbooks](https://photon.codes/docs/beta/cookbooks)
-- [Photon Spectrum voice over SIP](https://photon.codes/docs/spectrum-ts/providers/voice)
-- [LiveKit inbound SIP workflow](https://docs.livekit.io/telephony/accepting-calls/workflow-setup/)
-- [LiveKit voice AI quickstart](https://docs.livekit.io/agents/start/voice-ai/)
-- [LiveKit Deepgram STT integration](https://docs.livekit.io/agents/models/stt/deepgram/)
-- [LiveKit transcript text](https://docs.livekit.io/agents/multimodality/text/)
+Local verification passed **93 Worker/client/domain/notification tests and 22 voice-runtime tests**, including repeat-case regressions. These do not establish actual audio, phone routing, or a delivered notification. Production deployment is still pending.
+
+- **Photon:** claim the real call integration only after the provisioned route is tested. Browser-audio tests stay labeled as browser tests.
+- **State Farm:** changing reported urgency, area/capability matching, accountable ownership, and visible unknown-location follow-up; rules are not sponsor-approved dispatch policy.
+- **T-Mobile:** team-created synthetic scenarios, exact psychological-pressure evidence, clear verification action, and a recipient-facing warning. Curated regression success is not independently measured real-world detection accuracy.
+- **Other tracks:** MongoDB Atlas, Tiger Data, Gemini API, Solana, and Vultr are not integrated or claimed. Extra channels and vendor sign-ups are outside the immediate demonstration.
+
+Pharos sees only calls deliberately routed through its number; it cannot intercept arbitrary personal calls or derive GPS from a phone number. Ordinary help calls remain phone-only; the optional PWA is for warning setup and display.
+
+Official references: [Photon Beta cookbooks](https://photon.codes/docs/beta/cookbooks), [Photon billing](https://photon.codes/docs/beta/billing), [LiveKit inbound workflow](https://docs.livekit.io/telephony/accepting-calls/workflow-setup/), [voice quickstart](https://docs.livekit.io/agents/start/voice-ai/), and [LiveKit pricing](https://livekit.com/pricing).

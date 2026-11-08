@@ -1,64 +1,50 @@
 # Pharos
 
-Pharos has two connected parts: **Flare**, a voice-first way for a person to report a disaster-related need, and **Beacon**, a responder desk that organizes those requests by service area and explainable urgency. Suspicious wording is reviewed in a separate lane so a scam warning never blocks a help request.
+**Flare** is a resident phone hotline. **Beacon** is a responder website that organizes reported disaster needs by service area, changing urgency, and accountable ownership. Pressure Trace reviews suspicious wording separately so a scam warning never blocks a help request. Residents do not complete a website intake form.
 
-The deployed prototype now has a persistent backend. A synthetic transcript can create a tracked call, a help case, an area match, a suggested urgency tier, a responder eligibility list, and a separate scam review. The same server-side analysis runs after a consented Photon → LiveKit call transcript arrives. The public demo is still synthetic-only because the phone route and protected responder credentials have not been configured.
+The local Worker, persistent SQLite store, voice runtime, and optional warning PWA are implemented. The current revision awaits production deployment; **actual Photon calls, live speech recognition, and a phone notification banner are not yet verified**. The initial Devpost entry exists; final submission is November 8, 2026 at noon CST.
 
-## Run the demo
+## Try the local demonstration
 
-Open [the live Pharos demo](https://signalbridge-hackutd-2026.app.space) or open `index.html` for a static visual preview. The interactive backend features require the deployed Worker or local DeepSpace runtime; opening the file directly cannot reach the API.
+[The existing public demo](https://signalbridge-hackutd-2026.app.space) may lag this revision. Open `index.html` for a static preview, or build/run the Worker in `deepspace-host` for interactive behavior. Direct file access cannot call the backend.
 
-In Beacon, use **Run a synthetic call through the backend** to submit a fictional transcript. The server stores it in SQLite-backed Durable Object storage and returns the resulting call/case. The result includes the matched response area, suggested queue tier and reason, location gaps, eligible responders, and any exact scam-wording signals. Refresh the page to see persisted records. Synthetic data is clearly labelled and can be reset without deleting real records.
+Beacon's synthetic-call workbench processes fictional transcripts through the server rules, persists the call/case, and shows the matched area, urgency reason, eligible responders, and wording evidence. Refresh to check persistence. Synthetic reset preserves non-synthetic records. Demo-only mode exposes only synthetic records; protected live intake requires server secrets.
 
-## System flow
+## What is implemented
+
+- **Cases change during calls.** Ordered consented turns update partial cases before hang-up. Unknown safety/location remains visible; incomplete transcript delivery requests follow-up.
+- **Conservative return-call retrieval.** Actual SIP intake metadata supplies a short-lived keyed number lookup, not caller identity. Updating an earlier open request additionally requires explicit same-situation intent, a substantial current-location match, and one eligible recent ended-call case. Ambiguity creates a separate case. The latest report, timestamped history, and reassessment state preserve evolving conditions without requiring a name. Repeat-case regressions pass in the local suite.
+- **Human-owned coordination.** Area/capability/approval/availability/capacity determine claim eligibility. Unknown locations can have follow-up owners. Responders can resolve/reopen cases and record priority changes with reasons. Changed coverage flags assignment review; new danger prompts reassessment.
+- **Content-grounded warnings.** Exact transcript spans explain psychological pressure such as authority, artificial deadlines, threats, isolation, and risky payment/code requests. Urgency alone is not fraud. No numeric fraud probability or identity claim is made.
+- **Pre-enrolled recipient warnings.** A protected responder can pair a consenting test recipient before a guard call using a private 24-hour link. `guard.html` supports foreground warnings and permission-based Web Push. SMS is an optional disabled adapter. Availability, provider acceptance, and device-reported display are distinct states; actual phone delivery remains untested.
+- **Consent and retention.** No raw audio enters the Worker. Transcript storage starts after clear consent; withdrawal stops collection and scrubs evidence/access/linkage. Scheduled expiry removes transcript/evidence and private access within at most 24 hours; minimal structured help facts may remain.
+
+Most recent completed local verification: **93 Worker/client/domain/notification tests and 22 voice-runtime tests passed**. These use fictional inputs and local/mocked services, not real phone calls. See [the system plan](SYSTEM_PLAN.md) for the current integration gates and limitations.
+
+## Phone architecture
 
 ```text
-Photon Voice line
-  → SIP route into LiveKit
-  → LiveKit voice agent (STT + LLM conversation + TTS spoken intake)
-  → consented text turns to the protected Pharos Worker API
-  → persistent SQLite-backed call, transcript, case, and review records
-  → Beacon filters by service area and shows suggested urgency
-  → an eligible responder claims the case; a human owns dispatch
+Photon number → SIP → LiveKit STT / consented intake
+  → protected ordered text events → Worker + persistent SQLite
+  → changing case / separate pressure warning → Beacon / enrolled recipient
 ```
 
-The voice agent discloses speech recognition and transcript sharing before it starts the intake. LiveKit speech recognition must process audio to recognize the caller's consent; Pharos does not persist transcript text until a clear yes is received. Raw audio is not written to Pharos storage. After consent, the agent asks about immediate danger, location, requested help, and useful time-sensitive details. At call end, the server analyzes the transcript and creates the case. A caller who disconnects early still produces a partial record with unknown fields where possible.
+The owner provisioned one Photon US number using **$2 existing credit**; the wallet is $98 and **$3 remains of the authorized $5 test budget, with $0 out of pocket**. The default SIP profile, one LiveKit inbound trunk, and intake dispatch rule exist. The owner must finish saving the prepared Photon TLS destination with the generated SIP authentication, and fill the consenting caller allowlist. Eleven selected server secrets were uploaded with merge semantics and apply at deployment. SMS activation/10DLC is pending; no SMS, paid-plan, or campaign upgrade is enabled. Follow [PHOTON_SETUP.md](PHOTON_SETUP.md) and [voice-agent/README.md](voice-agent/README.md); set route-ready only after real end-to-end testing.
 
-## What the backend does
+Guard mode is a separate, explicitly enabled two-leg call to a fixed consenting test phone. Calls must reach the configured Photon number; Pharos cannot inspect arbitrary calls to a personal number. The optional resident PWA provides warnings and notification setup, not help intake. A telephone call supplies no reliable GPS; location comes from the caller's current report.
 
-- **Tracks call sessions:** random Pharos call ID, state, consent status, timestamps, transcript source, and linked case. LiveKit room names, phone numbers, and raw audio are not stored by this prototype.
-- **Transcribes voice:** the Python LiveKit agent uses LiveKit Inference for speech-to-text, conversation, and speech output. It posts finalized text turns to `/api/voice/ingest`; the Worker never receives audio.
-- **Matches location:** it uses caller-spoken address/landmark, configured alias/ZIP, or coordinates against configured response zones. An unmatched location stays visible as unassigned and requires follow-up. The included zones are fictional test data.
-- **Suggests urgency transparently:** explicit life-safety phrases or a yes to immediate danger suggest `immediate`; an essential medical/powered-device need suggests `time-sensitive`; evacuation, shelter, or supplies suggest `urgent`; insufficient information suggests `follow-up`. Missing or uncertain details are not treated as low need. This is a prototype rule set, not a validated emergency triage standard.
-- **Routes by service area and capability:** responders register zones, skills, availability, and current capacity. Only approved, available responders who cover that zone and need are listed as eligible. The desk filters the queue by area; responders claim cases, and assignment capacity is persisted.
-- **Reviews suspicious content separately:** wording rules show matched phrases about authority, pressure, money/codes, secrecy, links, or threats. A possible-scam score cannot authenticate a sender, prove intent, hang up a call, or reduce the help case's priority.
-- **Protects live data:** demo mode only returns synthetic records. Live mode requires server-side responder/session secrets and a separate bearer token for voice ingestion. Coordinator approval uses a separate password. Live transcript text is scrubbed within 24 hours (the operator may choose a shorter period); the user can still see the case summary and non-transcript fields after expiry.
+## Boundaries and sponsor scope
 
-## Connect a real call
+Urgency rules are not validated emergency triage or dispatch. Response zones/responders are fictional; shared demo passwords do not verify individuals or enforce per-responder area access. A human owns every real-world action. Pharos re-triages as reports arrive; it does not continuously sense rising water or guarantee assistance.
 
-1. Configure a Photon Voice line and route inbound SIP calls to the LiveKit SIP destination using Photon’s [LiveKit cookbook](https://photon.codes/docs/beta/cookbooks). No number has been purchased: the team previously chose to keep using simulated data. The Photon account has $100 of credits, but credit eligibility for a voice line/usage has not been confirmed.
-2. Create a LiveKit Cloud project and configure its SIP inbound trunk/dispatch rule to launch the `pharos-intake` agent.
-3. Copy `Product/voice-agent/.env.local.example` to `.env.local` and fill in LiveKit credentials, the deployed app URL, and the same random ingest token used by the Worker. Keep the file private.
-4. Configure DeepSpace secrets: `PHAROS_RESPONDER_PASSWORD`, `PHAROS_COORDINATOR_PASSWORD`, `PHAROS_SESSION_SECRET`, and `PHAROS_INGEST_TOKEN`. Use strong, separate random values. Add `LIVEKIT_URL` and `PHOTON_VOICE_LINE_ID` as server variables. Do not set `PHAROS_VOICE_ROUTE_READY=true` until a consenting synthetic test call has passed end to end.
-5. From `Product/voice-agent`, install with `uv sync`, start with `uv run python agent.py dev`, and place a fictional test call from a consenting teammate. Check transcript quality, location routing, urgency evidence, consent, and call completion before using the demo in a pitch.
+Core targets are State Farm, T-Mobile Safe Signal, Photon, and General/Beginner. Team-created synthetic scam scenarios are permitted by the supplied T-Mobile slide. MongoDB Atlas and Tiger Data are future options, not integrated services or claimed tracks. The LiveKit model choice is not a Gemini API integration.
 
-The LiveKit model calls need a LiveKit Cloud account and may consume its inference/telephony credits or incur usage charges. No real resident data should be used for this hackathon prototype.
+## Project map
 
-## Important boundaries
-
-- The current app cannot automatically intercept or transfer ordinary calls on someone's personal phone based on their location. A call is trackable only after it reaches the configured Pharos/Photon line. Native call screening or carrier-based routing would require separate OS/carrier integration.
-- A website cannot infer someone's location from a phone call. Pharos asks for a spoken landmark/address and matches it to configured areas; later, a trusted location provider could be added with explicit permission.
-- The queue is not a medical or emergency dispatch system. It does not send responders, offer live warnings, or promise assistance.
-- The single shared responder/coordinator passwords are for a demo, not a production identity system. Do not expose real emergency information through this prototype.
-- The Photon MCP connection is for developer-side Photon operations. The public app does not need a Photon API key for the current SIP → LiveKit route; it does need a provisioned Photon line and configured SIP destination.
-
-## Project files
-
-- `index.html`, `styles.css`, `app.js` — Pharos Flare/Beacon interface, call workbench, scam review, and animated guide.
-- `deepspace-host/worker.ts` — authenticated API routes and live voice-ingest endpoint.
-- `deepspace-host/pharos-domain.ts` — transcript parsing, urgency/location routing, responder eligibility, and scam wording rules.
-- `deepspace-host/pharos-store.ts` — SQLite-backed persistent records, retention, and audit events.
-- `voice-agent/agent.py` — Photon SIP → LiveKit voice agent and consent-gated transcript delivery.
-- `SYSTEM_PLAN.md` — product and triage decisions, implementation status, and boundaries.
-- `PHOTON_SETUP.md` — Photon project status and line setup notes.
-- `PROJECT_LOG.md` — timestamped implementation, obstacles, decisions, and screenshot checkpoints.
+- `index.html`, `styles.css`, `app.js` — Beacon, synthetic workbench, Pressure Trace, animated local Guide.
+- `guard.html`, `guard.js`, `guard-worker.js`, `guard.webmanifest` — private recipient warning PWA and notification handling.
+- `deepspace-host/worker.ts`, `pharos-store.ts` — authenticated APIs, SQLite persistence, warnings, retention, audit.
+- `deepspace-host/pharos-domain.ts`, `pharos-facts.ts`, `pharos-pressure.ts` — facts, routing, urgency, pressure evidence.
+- `deepspace-host/pharos-push.ts`, `pharos-notify.ts` — Web Push and optional Photon SMS adapter.
+- `voice-agent/agent.py`, `pharos_runtime.py` — LiveKit intake/guard, consent, ordered delivery, cleanup.
+- [SYSTEM_PLAN.md](SYSTEM_PLAN.md), [PHOTON_SETUP.md](PHOTON_SETUP.md), [PROJECT_LOG.md](PROJECT_LOG.md) — plan, account gates, and ongoing implementation evidence.

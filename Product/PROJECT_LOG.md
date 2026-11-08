@@ -511,3 +511,11 @@ Append a dated note after each meaningful implementation session. Include what c
 - Manual, tests and design were published to the existing DeepSpace app and visually inspected. Final source-stamp/access checks follow the clean release. Existing voice/phone acceptance gates remain distinct from documentation validation.
 
 - Transcript display now preserves existing speaker-turn line breaks in the case and evidence panels. Call-log transcripts already use pre-wrap. This is a presentation-only change; stored transcript content is unchanged.
+
+
+## November 8, 2026 — Mini: approved silent fictional-data demo
+
+- User explicitly approved the fictional-data walkthrough. Captured actual Beacon screens in an isolated local Miniflare/SQLite runtime with dummy credentials and fictional contacts/reports. No production API writes, phone calls, model inference, recording or provider actions were performed.
+- Produced a 140-second 1920x1080 H.264 MP4 (24fps), no audio stream. Captioned screen edits cover queue, sample transcript, current facts, simulated worsening callback/history, fixed concern evidence, reasoned human acceptance, eligible fictional assignment and explicit ten-minute desk ETA. Simulated call events/review results are disclosed in captions, page and storyboard.
+- Added /demo player, poster, built-in captions plus VTT, 12 feature chapter links, readable walkthrough and MP4 download. Captures depict the interface at recording time; coordinated against the separate UX redesign agent.
+- Video frames visually inspected for caption and evidence readability; duration/stream/decode and hosted playback/access checks are release gates.

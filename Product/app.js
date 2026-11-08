@@ -20,6 +20,38 @@ let audioObjectUrl = '';
 let audioContext = '';
 let audioLoadingContext = '';
 
+
+// Client-side pagination changes presentation only; full records stay loaded.
+const listPages = new Map();
+const pageSizes = { queue: 5, calls: 3, responders: 5, evidence: 5, history: 5, signals: 5 };
+function pagedItems(key, items, context = '') {
+  const identity = context + ':' + JSON.stringify(items.map(item => item.id ?? [item.at, item.callId, item.summary, item.evidence]));
+  let state = listPages.get(key);
+  if (!state || state.identity !== identity) state = { page: 0, identity };
+  state.total = items.length;
+  state.pages = Math.max(1, Math.ceil(items.length / pageSizes[key]));
+  state.page = Math.min(Math.max(0, state.page), state.pages - 1);
+  listPages.set(key, state);
+  const start = state.page * pageSizes[key];
+  const controls = $('#' + key + 'Pagination');
+  if (controls) controls.innerHTML = `<span class="pagination-status" role="status">${items.length ? start + 1 : 0}–${Math.min(start + pageSizes[key], items.length)} of ${items.length} · Page ${state.page + 1} of ${state.pages}</span><div class="pagination-buttons">${[['first','FIRST'],['previous','PREVIOUS'],['next','NEXT'],['last','LAST']].map(([action,label]) => `<button type="button" data-page-list="${key}" data-page-action="${action}" aria-label="${label.toLowerCase()} ${key} page"${((action === 'first' || action === 'previous') ? state.page === 0 : state.page >= state.pages - 1) ? ' disabled' : ''}>${label}</button>`).join('')}</div>`;
+  return items.slice(start, start + pageSizes[key]);
+}
+function changeListPage(key, action) {
+  const state = listPages.get(key);
+  if (!state) return;
+  state.page = ({ first: 0, previous: state.page - 1, next: state.page + 1, last: state.pages - 1 })[action] ?? state.page;
+  const render = { queue: renderQueue, calls: renderCalls, responders: renderResponderCoverage, evidence: renderLiveWarnings, history: () => { const item = appData.cases.find(item => item.id === selectedCaseId); if (item) renderCaseHistory(item); }, signals: () => renderPressureTrace(selectedPressureReview()) }[key];
+  if (render) render();
+}
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-page-list]');
+  if (!button || button.disabled) return;
+  changeListPage(button.dataset.pageList, button.dataset.pageAction);
+  const replacement = document.querySelector(`[data-page-list="${button.dataset.pageList}"][data-page-action="${button.dataset.pageAction}"]`);
+  if (replacement) replacement.focus({ preventScroll: true });
+});
+
 const sampleMessage = 'County Rescue Office: Your evacuation seat expires in 5 minutes. Pay a $40 fee by gift card to reserve it. Do not call the county or your request will be cancelled.';
 
 function escapeHtml(value) {
@@ -246,7 +278,8 @@ function renderCaseHistory(item, changedCase = false) {
   $('#caseLinkedCalls').textContent = `${linkedCallCount} linked call${linkedCallCount === 1 ? '' : 's'}`;
   $('#caseHistoryCount').textContent = String(history.length);
   $('#caseLinkageNote').textContent = linkedCallCount > 1 ? 'Multiple reports are linked to this case by the phone route. Caller identity and ownership of the phone number are not verified.' : 'This timeline records reported changes and responder reviews. A phone-route match does not verify caller identity.';
-  $('#caseHistoryList').innerHTML = history.length ? history.map((entry) => {
+  const visibleHistory = pagedItems('history', history, item.id);
+  $('#caseHistoryList').innerHTML = history.length ? visibleHistory.map((entry) => {
     const changedPriority = entry.previousPriority && entry.previousPriority !== entry.priority;
     const escalated = changedPriority && priorityRankValue(entry.priority) < priorityRankValue(entry.previousPriority);
     const kindLabel = ({ initial: 'Initial report', 'caller-update': 'Caller update', 'responder-review': 'Responder review' })[entry.kind] || 'Case update';
@@ -430,7 +463,8 @@ function renderQueue() {
   $('.followup-label').hidden = true;
   followups.hidden = true;
   followups.innerHTML = '';
-  queue.innerHTML = items.length ? items.map(renderCaseCard).join('') : '<div class="queue-loading">No matching requests in this area.</div>';
+  const visibleItems = pagedItems('queue', items, activeFilter + ':' + currentZoneId());
+  queue.innerHTML = items.length ? visibleItems.map(renderCaseCard).join('') : '<div class="queue-loading">No matching requests in this area.</div>';
   updateCounts();
   if (selectedCaseId) setSelectedCase(selectedCaseId);
   else showEmptyCase();
@@ -458,6 +492,7 @@ function showEmptyCase() {
   $('#caseReassessment').hidden = true;
   $('#caseHistoryCount').textContent = '0';
   $('#caseHistoryList').innerHTML = '<li class="case-history-empty">No case update history is loaded.</li>';
+  pagedItems('history', [], 'empty');
   $('#caseHistory').open = false;
   $('#reporterName').textContent = 'No caller';
   $('#reporterAvatar').textContent = '—';
@@ -492,15 +527,16 @@ function showEmptyCase() {
 
 function renderCalls() {
   const list = $('#callList');
+  const visibleCalls = pagedItems('calls', appData.calls);
   if (!appData.calls.length) {
     list.innerHTML = '<div class="queue-loading">No calls yet. The transcript processor above creates a synthetic session; real calls require the Photon SIP route.</div>';
     return;
   }
-  list.innerHTML = appData.calls.slice(0, 10).map((call) => {
-    const transcript = (call.transcript || '').split('\n').slice(-8).join('\n');
+  list.innerHTML = visibleCalls.map((call) => {
+    const transcript = call.transcript || '';
     return `<article class="call-session-card"><div class="call-session-top"><strong>${escapeHtml(call.id)}</strong><time>${escapeHtml(fullTime(call.startedAt))}</time></div>
       <div class="call-session-meta"><span>${escapeHtml(call.provider)}</span><span>Status: ${escapeHtml(call.status)}</span><span>Consent: ${escapeHtml(call.consent)}</span><span>${escapeHtml(call.transcriptionSource)}</span></div>
-      ${transcript ? `<pre class="call-session-transcript">${escapeHtml(transcript)}</pre>` : ''}
+      ${transcript ? `<pre class="call-session-transcript" tabindex="0" role="region" aria-label="Call transcript">${escapeHtml(transcript)}</pre>` : ''}
       ${call.caseId ? `<a href="#response" class="call-session-link" data-jump-case="${escapeHtml(call.caseId)}">Open linked case ${escapeHtml(call.caseId)} →</a>` : '<span class="call-session-link">No help case created</span>'}
     </article>`;
   }).join('');
@@ -515,11 +551,12 @@ function renderPressureTrace(review) {
   $('#pressureSourceDetail').textContent = review ? `${review.synthetic ? 'Synthetic' : 'Consented'} · ${review.createdAt ? fullTime(review.createdAt) : 'Content review'}` : 'Waiting for a call or message';
   $('#suspiciousText').textContent = review?.text || (review?.signals?.length ? review.signals.map((signal) => `“${signal.evidence}”`).join(' · ') : 'Select a scam review or analyze a synthetic message to see transcript evidence.');
   $('#traceCount').textContent = String(review?.signals?.length || 0);
+  const visibleSignals = pagedItems('signals', review?.signals || [], review?.id || review?.callId || '');
   const list = $('#traceSignalList');
   if (!review?.signals?.length) {
     list.innerHTML = '<div class="signal-row"><span class="signal-number">—</span><span class="signal-copy"><strong>No strong pressure pattern found</strong><small>Wording cannot authenticate a sender; urgency alone is not proof.</small></span><span class="signal-strength">REVIEW</span></div>';
   } else {
-    list.innerHTML = review.signals.map((signal, index) => `<div class="signal-row"><span class="signal-number">${String(index + 1).padStart(2, '0')}</span><span class="signal-copy"><strong>${escapeHtml(signal.label)}</strong><small>“${escapeHtml(signal.evidence)}”</small>${signal.explanation ? `<p class="signal-explanation">${escapeHtml(signal.explanation)}</p>` : ''}</span><span class="signal-strength">${risk === 'high' ? 'STRONG' : 'CHECK'}</span></div>`).join('');
+    list.innerHTML = visibleSignals.map((signal, index) => `<div class="signal-row"><span class="signal-number">${String(index + 1 + listPages.get('signals').page * pageSizes.signals).padStart(2, '0')}</span><span class="signal-copy"><strong>${escapeHtml(signal.label)}</strong><small>“${escapeHtml(signal.evidence)}”</small>${signal.explanation ? `<p class="signal-explanation">${escapeHtml(signal.explanation)}</p>` : ''}</span><span class="signal-strength">${risk === 'high' ? 'STRONG' : 'CHECK'}</span></div>`).join('');
   }
   const action = $('.trace-results .safe-action p');
   if (action && review) action.innerHTML = `<strong>Safer next step</strong><br />${escapeHtml(review.nextStep)}`;
@@ -546,7 +583,8 @@ function responderEvidenceReviews() {
 function renderLiveWarnings() {
   const alerts = responderEvidenceReviews().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   $('#liveWarningCount').textContent = String(alerts.length);
-  $('#liveWarningList').innerHTML = alerts.length ? alerts.slice(0, 8).map((alert) => `<button type="button" class="live-warning-card ${alert.level === 'high' ? 'warning-high' : 'warning-review'}" data-alert-id="${escapeHtml(alert.id)}"><span class="warning-card-head"><strong>${escapeHtml(alert.headline || 'Possible pressure pattern')}</strong><time>${escapeHtml(formatAge(alert.createdAt))}</time></span><span class="warning-card-meta">Call ${escapeHtml(alert.callId || 'unknown')} · ${alert.integrityStatus ? 'Responder intake review' : `Historical notification record · ${escapeHtml(warningDeliveryLabel(alert.deliveryStatus, alert.displayedAt))}`}</span><span class="warning-card-evidence">${escapeHtml((alert.signals || []).slice(0, 2).map((signal) => `“${signal.evidence}”`).join(' · '))}</span><span class="warning-card-action">Review evidence and human next step →</span></button>`).join('') : '<p class="queue-loading">No case concerns are loaded. Pending or flagged intake reports remain in the urgency queue for human review.</p>';
+  const visibleAlerts = pagedItems('evidence', alerts);
+  $('#liveWarningList').innerHTML = alerts.length ? visibleAlerts.map((alert) => `<button type="button" class="live-warning-card ${alert.level === 'high' ? 'warning-high' : 'warning-review'}" data-alert-id="${escapeHtml(alert.id)}"><span class="warning-card-head"><strong>${escapeHtml(alert.headline || 'Possible pressure pattern')}</strong><time>${escapeHtml(formatAge(alert.createdAt))}</time></span><span class="warning-card-meta">Call ${escapeHtml(alert.callId || 'unknown')} · ${alert.integrityStatus ? 'Responder intake review' : `Historical notification record · ${escapeHtml(warningDeliveryLabel(alert.deliveryStatus, alert.displayedAt))}`}</span><span class="warning-card-evidence">${escapeHtml((alert.signals || []).slice(0, 2).map((signal) => `“${signal.evidence}”`).join(' · '))}</span><span class="warning-card-action">Review evidence and human next step →</span></button>`).join('') : '<p class="queue-loading">No case concerns are loaded. Pending or flagged intake reports remain in the urgency queue for human review.</p>';
 }
 
 function selectedPressureReview() {
@@ -564,11 +602,12 @@ function renderResponderCoverage() {
   }
   const container = $('#responderProfiles');
   if (!container) return;
+  const visibleResponders = pagedItems('responders', appData.responders);
   if (!appData.responders.length) {
     container.innerHTML = '<div class="queue-loading">No responder profiles registered.</div>';
     return;
   }
-  container.innerHTML = appData.responders.map((responder) => {
+  container.innerHTML = visibleResponders.map((responder) => {
     const areas = (responder.serviceAreas || []).map((id) => appData.zones.find((zone) => zone.id === id)?.name || id).join(', ');
     const state = responder.approved ? responder.available ? 'Approved · available' : 'Approved · off shift' : 'Awaiting coordinator approval';
     const canApprove = appData.mode !== 'secured' || appData.role === 'coordinator';
@@ -631,6 +670,7 @@ function lockWorkspace() {
   appHealth = null;
   selectedCaseId = null;
   selectedPressureId = null;
+  listPages.clear();
   activeFilter = 'all';
   progressDraftDirty = false;
   progressSubmitting = false;

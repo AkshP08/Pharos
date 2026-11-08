@@ -749,3 +749,73 @@ button:disabled { cursor: default; opacity: .55; transform: none; box-shadow: no
 .modular-desk .responder-form input:not([type="checkbox"]) { font-size: 13px; min-height: 42px; }
 .modular-desk .responder-profile strong, .modular-desk .call-session-card strong { font-size: 13px; }
 .modular-desk .responder-profile small, .modular-desk .responder-profile span, .modular-desk .call-session-card small, .modular-desk .call-session-card p { font-size: 12px; line-height: 1.7; }
+
+/* Adjustable reading size and bounded record lists. */
+.modular-desk { --reading-font: 16px; }
+.display-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-top: 16px; }
+.font-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.display-controls button, .list-pagination button { min-height: 40px; padding: 8px 12px; border: 1px solid #bbcbd8; border-radius: 6px; background: #fff; color: #203c50; font: 600 14px/1.3 inherit; }
+.display-controls span, .display-controls output { font-size: 14px; color: #3a5368; }
+.display-controls button:disabled, .list-pagination button:disabled { opacity: .45; cursor: default; }
+.display-controls button:hover:not(:disabled), .list-pagination button:hover:not(:disabled) { background: #e4f1f1; }
+.modular-desk #beaconView :is(p,li,pre,label,legend,input,textarea,select,summary), .modular-desk .guide-bubble { font-size: var(--reading-font); line-height: 1.65; }
+.modular-desk #beaconView :is(small,time), .modular-desk #beaconView :is(.request-meta,.request-bottom,.call-session-meta,.call-session-link,.warning-card-meta,.warning-card-action,.history-call,.history-changes,.case-location,.case-owner,.case-action-result,.integrity-meta,.integrity-reason,.safe-note,.queue-footnote,.panel-kicker,.case-update-summary,.backend-result,.response-state,.integrity-queue-badge) { font-size: max(14px, calc(var(--reading-font) - 2px)); line-height: 1.6; }
+.modular-desk #beaconView :is(.request-topline strong,.request-excerpt,.call-session-top strong,.responder-profile strong,.responder-profile span,.warning-card-head strong,.warning-card-evidence,.signal-copy strong,.signal-copy small,.history-entry-head strong,.history-reason,.priority-title strong,.reporter-copy strong,.reporter-copy span,.response-progress-note,.response-progress-reported) { font-size: var(--reading-font); line-height: 1.65; }
+.modular-desk #beaconView :is(.tag,.queue-tab,.zone-filter-label,.trace-label,.message-caption,.message-source small,.case-update-count,.human-check) { font-size: max(14px, calc(var(--reading-font) - 2px)); }
+.modular-desk #beaconView :is(button,.button,.text-button) { font-size: max(14px, calc(var(--reading-font) - 2px)); }
+.modular-desk #beaconView :is(#caseMessage,#suspiciousText,.call-session-transcript) { font-size: calc(var(--reading-font) + 2px); line-height: 1.8; max-height: 360px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #253f50; scrollbar-gutter: stable; }
+.modular-desk .message-quote { padding: 16px; }
+.modular-desk .message-quote p { margin: 0; }
+.modular-desk #caseMessage, .modular-desk #suspiciousText { padding-right: 10px; }
+.modular-desk .call-session-card, .modular-desk .responder-profile, .modular-desk .live-warning-card { padding: 18px; }
+.modular-desk .call-session-top, .modular-desk .request-topline, .modular-desk .warning-card-head { flex-wrap: wrap; }
+.modular-desk .request-card { padding: 16px; min-width: 0; }
+.modular-desk .request-bottom, .modular-desk .request-meta { flex-wrap: wrap; gap: 8px; }
+.modular-desk .request-excerpt { display: block; white-space: normal; overflow: visible; }
+.modular-desk .queue-tabs { flex-wrap: wrap; }
+.modular-desk :is(#queueList,#callList,#responderProfiles,#liveWarningList,#caseHistoryList,#traceSignalList) { max-height: 760px; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
+.modular-desk #caseHistoryList { max-height: 500px; }
+.list-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid #dce4eb; margin-top: 16px; padding-top: 14px; }
+.modular-desk #beaconView .pagination-status { font-size: 14px; line-height: 1.6; color: #405a6e; }
+.pagination-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.modular-desk #beaconView .list-pagination button { font-size: 12px; padding: 9px 10px; }
+.modular-desk .content-grid { grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); }
+.modular-desk :is(.panel,.pressure-grid > *, .request-main,.request-meta > *, .responder-profile > div) { min-width: 0; overflow-wrap: anywhere; }
+.modular-desk .guide-panel { width: min(440px,calc(100vw - 28px)); }
+.modular-desk .guide-messages { max-height: 420px; }
+@media (max-width: 1050px) { .modular-desk .content-grid { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 680px) {
+  .modular-desk .topbar-right { flex-wrap: wrap; }
+  .modular-desk #beaconView :is(#caseMessage,#suspiciousText,.call-session-transcript) { max-height: 320px; }
+  .modular-desk .responder-profile { align-items: flex-start; flex-wrap: wrap; }
+  .modular-desk .pressure-grid { grid-template-columns: minmax(0,1fr); }
+  .modular-desk .case-bottom-actions { flex-wrap: wrap; }
+}
+
+/* Dark appearance keeps review/urgency labels and all existing controls. */
+.modular-desk.dark-theme { color-scheme: dark; --paper: #101a27; --ink: #e4edf6; --muted: #adc0d0; --line: #3e5265; background: #101a27; color: #e4edf6; }
+.dark-theme :is(.main-content,.app-shell) { background: #101a27; }
+.dark-theme .sidebar { background: #0b1420; }
+.dark-theme :is(.panel,.workspace-toolbar,.signal-strip,.library-menu summary,.library-menu nav,.library-menu nav a,.library-menu nav button,.display-controls button,.list-pagination button,.mobile-case-nav a,.login-card,.guide-panel,.guide-form,.guide-head) { background: #1a2a3b; border-color: #41566b; color: #e4edf6; }
+.dark-theme :is(.request-card,.call-session-card,.responder-profile,.message-quote,.case-update-summary,.priority-review,.case-history,.case-history-entry,.response-progress,.integrity-panel,.caller-audio,.suspicious-message,.trace-results,.safe-action,.case-reassessment,.guide-bubble,.guide-topics button) { background: #213448; border-color: #486078; color: #e4edf6; }
+.dark-theme :is(.request-card.selected,.request-card:hover) { background: #244d56; border-color: #7fc6bd; }
+.dark-theme :is(.live-warning-card,.priority-explainer,.assignment-review-note,.integrity-hold-note,.safe-note) { background: #3b3224; border-color: #ac854d; color: #fff0d4; }
+.dark-theme :is(h1,h2,h3,h4,p,label,legend,small,time,summary,pre), .dark-theme #beaconView :is(strong,span), .dark-theme :is(.subhead,.module-context,.pagination-status,.display-controls span,.display-controls output,.workspace-tabs button,.breadcrumb,.app-footer,.responder-profile span,.responder-profile small) { color: #dce8f2 !important; }
+.dark-theme #beaconView :is(#caseMessage,#suspiciousText,.call-session-transcript) { background: #142333; color: #edf5fb !important; padding: 12px; border-radius: 6px; }
+.dark-theme :is(input,select,textarea) { background: #101e2c !important; color: #edf5fb !important; border-color: #648096 !important; }
+.dark-theme :is(.button-quiet,.text-button,.close-tool,.help-button) { background: #243b50; color: #e4edf6; border-color: #688196; }
+.dark-theme .button-primary, .dark-theme .workspace-toolbar a.active { background: #185e61; color: #fff; border-color: #73c6c2; }
+.dark-theme .workspace-toolbar a { color: #d5e3ef; }
+.dark-theme .workspace-toolbar a:hover, .dark-theme .library-menu nav a:hover, .dark-theme .display-controls button:hover:not(:disabled), .dark-theme .list-pagination button:hover:not(:disabled) { background: #345267; }
+.dark-theme :is(.tag-critical,.integrity-review-required,.integrity-dismissed,.risk-badge,.report-status) { background: #5c3537; color: #ffe6e3; border-color: #cd9696; }
+.dark-theme :is(.tag-time,.tag-review,.integrity-pending,.integrity-queue-badge,.count-badge,.unverified-badge,.synthetic-case-label) { background: #33495e; color: #edf5fb; border-color: #7f99ae; }
+.dark-theme .queue-tab { color: #dae8f2; }
+.dark-theme .queue-tab.selected { background: #2e5c5e; color: #fff; }
+.dark-theme .workspace-tabs button[aria-selected="true"] { border-bottom-color: #83d7ca; }
+.dark-theme :focus-visible { outline-color: #91d8ff; }
+.dark-theme #beaconView a, .dark-theme .text-button { color: #9ce2dc !important; }
+.dark-theme #beaconView .panel-kicker, .dark-theme .pagination-status { color: #b9ccdc !important; }
+.modular-desk :is(input,select,textarea) { max-width: 100%; min-width: 0; }
+.modular-desk .responder-select { width: 100%; flex: 1 1 100%; }
+.modular-desk .strip-metric { overflow-wrap: anywhere; }
+@media (max-width: 680px) { .modular-desk .strip-metric small { font-size: max(14px,calc(var(--reading-font) - 6px)); } }

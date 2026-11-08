@@ -687,3 +687,56 @@ test('expired or withdrawn metadata cannot resurrect an in-flight caller recordi
     assert.equal(page.node('#caseAudioPlayer').src, '', change);
   }
 });
+
+test('queue pagination reaches every record without changing the selected case or urgency totals', async () => {
+  const page = await beacon(snapshot(Array.from({ length: 12 }, (_, i) => caseRecord(`paged-${i}`, { createdAt: `2026-11-08T07:${String(i).padStart(2, '0')}:00Z` }))));
+  assert.equal((page.node('#queueList').innerHTML.match(/data-case-id=/g) || []).length, 5);
+  const selected = page.run('selectedCaseId');
+  page.run("changeListPage('queue','next')");
+  assert.match(page.node('#queueList').innerHTML, /data-case-id="paged-5"/);
+  assert.equal(page.run('selectedCaseId'), selected);
+  assert.equal(page.node('#queueBadge').textContent, '12');
+  page.run("changeListPage('queue','last')");
+  assert.match(page.node('#queueList').innerHTML, /paged-11/);
+  assert.equal((page.node('#queueList').innerHTML.match(/data-case-id=/g) || []).length, 2);
+  page.run("changeListPage('queue','previous')");
+  assert.match(page.node('#queueList').innerHTML, /paged-5/);
+  page.run("changeListPage('queue','first')");
+  assert.match(page.node('#queueList').innerHTML, /paged-0/);
+});
+
+test('pagination resets on filtering or new membership and clamps out-of-range requests', async () => {
+  const page = await beacon(snapshot(Array.from({ length: 12 }, (_, i) => caseRecord(`filter-${i}`))));
+  page.run("changeListPage('queue','last')");
+  await page.tab('immediate');
+  assert.match(page.node('#queuePagination').textContent, /0–0 of 0/);
+  await page.tab('all');
+  assert.equal(page.run("listPages.get('queue').page"), 0);
+  page.run("changeListPage('queue','last'); appData.cases = appData.cases.slice(0,2); renderQueue()");
+  assert.equal(page.run("listPages.get('queue').page"), 0);
+  page.run("changeListPage('queue','previous')");
+  assert.equal(page.run("listPages.get('queue').page"), 0);
+});
+
+test('all loaded calls and full transcript turns remain reachable through pagination', async () => {
+  const transcript = Array.from({ length: 14 }, (_, i) => `Caller: Turn ${i}`).join('\n');
+  const page = await beacon(snapshot([caseRecord('phone-case')], { calls: Array.from({ length: 13 }, (_, i) => ({ id: `phone-${i}`, transcript, startedAt: '2026-11-08T07:00:00Z', status: 'completed', consent: 'yes' })) }));
+  assert.match(page.node('#callList').innerHTML, /Turn 0/);
+  assert.match(page.node('#callList').innerHTML, /Turn 13/);
+  page.run("changeListPage('calls','last')");
+  assert.match(page.node('#callList').innerHTML, /phone-12/);
+  assert.match(page.node('#callsPagination').textContent, /13–13 of 13/);
+});
+
+test('history pagination isolates cases and never changes the current case or response gates', async () => {
+  const history = Array.from({ length: 11 }, (_, i) => ({ kind: 'caller-update', at: `2026-11-08T07:${String(i).padStart(2, '0')}:00Z`, summary: `History entry ${i}`, callId: `history-call-${i}` }));
+  const page = await beacon(snapshot([caseRecord('long-history', { history, integrityReview: integrityReview('review-required') }), caseRecord('other-history')]));
+  page.run("changeListPage('history','last')");
+  assert.match(page.node('#historyPagination').textContent, /11–11 of 11/);
+  assert.equal(page.run('selectedCaseId'), 'long-history');
+  assert.match(page.node('#responseProgressTitle').textContent, /Human acceptance required/);
+  assert.match(page.node('#assignButton').textContent, /verification owner/);
+  page.run("setSelectedCase('other-history')");
+  assert.match(page.node('#historyPagination').textContent, /0–0 of 0/);
+  assert.doesNotMatch(page.node('#caseHistoryList').innerHTML, /History entry/);
+});

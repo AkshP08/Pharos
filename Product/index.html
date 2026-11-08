@@ -70,6 +70,10 @@
         <nav class="workspace-toolbar" aria-label="Workspace modules">
           <a href="#response" data-module="response">Response</a><a href="#callActivity" data-module="calls">Calls</a><a href="#liveWarnings" data-module="evidence">Evidence</a><a href="#responderCoverage" data-module="coverage">Coverage</a><a href="#training" data-module="training">Training</a>
         </nav>
+        <div class="display-controls" aria-label="Display settings">
+          <div class="font-controls" role="group" aria-label="Text size"><span>Text size</span><button type="button" id="fontDecrease" aria-label="Decrease text size">A−</button><output id="fontSizeValue" aria-live="polite">16 px</output><button type="button" id="fontIncrease" aria-label="Increase text size">A+</button><button type="button" id="fontReset">Reset</button></div>
+          <button type="button" id="themeToggle" aria-pressed="false">Dark theme</button>
+        </div>
         <div class="module-context"><span id="moduleDescription">Prioritized requests and the selected case, side by side.</span><span class="module-context-note">Human decisions · shared response desk</span></div>
         <div id="workspaceTabs" class="workspace-tabs" role="tablist" aria-label="Response views"></div>
         <div id="workspaceContent" tabindex="-1"></div>
@@ -106,7 +110,7 @@
             <label class="zone-filter-label" for="zoneFilter">Filter the shared desk by service area.</label>
             <select id="zoneFilter" class="zone-filter"><option value="all">All service areas</option></select>
             <div class="queue-section-label"><span>HIGHEST SUGGESTED URGENCY FIRST</span><span id="queueSortLabel">ALL AREAS</span></div>
-            <div id="queueList" class="queue-list"><div class="queue-loading">Connecting to Pharos response data…</div></div>
+            <div id="queueList" tabindex="0" aria-label="Help requests" class="queue-list"><div class="queue-loading">Connecting to Pharos response data…</div></div><nav id="queuePagination" class="list-pagination" aria-label="Requests pages"></nav>
             <div class="queue-section-label followup-label"><span>NEEDS FOLLOW-UP / UNASSIGNED</span><span id="followupSectionCount">0 CASES</span></div>
             <div id="followupList" class="followup-list"></div>
             <div class="queue-footnote"><span class="info-icon">i</span> Every report keeps its urgency rank. Review badges hold response actions until human acceptance; they do not erase reported danger.</div>
@@ -132,7 +136,7 @@
               <p id="caseReassessmentReason"></p>
               <button type="button" class="text-button" id="reviewNewFactsButton">Review new facts →</button>
             </div>
-            <div class="message-quote"><span class="quote-mark">“</span><p id="caseMessage">Select a request to inspect its transcript-derived facts.</p><small id="caseTranscriptCaption">Resident’s own words · synthetic scenario</small></div>
+            <div class="message-quote"><span class="quote-mark">“</span><p id="caseMessage" tabindex="0" aria-label="Selected case transcript">Select a request to inspect its transcript-derived facts.</p><small id="caseTranscriptCaption">Resident’s own words · synthetic scenario</small></div>
             <section class="caller-audio" id="caseAudioPanel" aria-labelledby="caseAudioTitle" hidden>
               <div class="panel-kicker">PRIVATE · CALLER-ONLY AUDIO</div>
               <h3 id="caseAudioTitle">Listen alongside the transcript</h3>
@@ -201,7 +205,7 @@
             <details class="case-history" id="caseHistory">
               <summary>Case update history <span id="caseHistoryCount">0</span></summary>
               <p class="case-linkage-note" id="caseLinkageNote">Linked reports show how the situation changed. A phone-route match does not verify caller identity.</p>
-              <ol class="case-history-list" id="caseHistoryList"><li class="case-history-empty">No case update history is loaded.</li></ol>
+              <ol class="case-history-list" id="caseHistoryList" tabindex="0" aria-label="Case update history"><li class="case-history-empty">No case update history is loaded.</li></ol><nav id="historyPagination" class="list-pagination" aria-label="Case history pages"></nav>
             </details>
             <div class="safe-note"><span class="lock-icon">⌑</span> Self-reported information needs human review. Priority changes record a reason; claiming a case does not dispatch help.</div>
           </section>
@@ -224,7 +228,7 @@
 
         <section id="callActivity" class="call-activity panel" aria-labelledby="callActivityTitle">
           <div class="panel-head"><div><div class="panel-kicker">PHOTON SIP → LIVEKIT → PHAROS</div><h2 id="callActivityTitle">Tracked call sessions <span id="callCount" class="count-badge">—</span></h2><p class="panel-intro">Each session has a call ID, status, consent state, transcript source, and linked case when available. Fictional fixtures are labelled separately from consented call events.</p></div></div>
-          <div id="callList" class="call-list"><div class="queue-loading">Loading call sessions…</div></div>
+          <div id="callList" tabindex="0" aria-label="Call sessions" class="call-list"><div class="queue-loading">Loading call sessions…</div></div><nav id="callsPagination" class="list-pagination" aria-label="Calls pages"></nav>
         </section>
 
         <section id="responderCoverage" class="responder-coverage panel" aria-labelledby="responderCoverageTitle">
@@ -245,12 +249,12 @@
             <button class="button button-primary" type="submit">Submit profile for approval <span>→</span></button>
           </form>
           <div id="responderRegistrationResult" class="backend-result" aria-live="polite"></div>
-          <div id="responderProfiles" class="responder-profile-list"></div>
+          <div id="responderProfiles" tabindex="0" aria-label="Responder profiles" class="responder-profile-list"></div><nav id="respondersPagination" class="list-pagination" aria-label="Responders pages"></nav>
         </section>
 
         <section id="liveWarnings" class="panel live-warning-panel" aria-labelledby="liveWarningTitle">
           <div class="panel-head"><div><div class="panel-kicker">RESPONDER EVIDENCE · PRESSURE REVIEW</div><h2 id="liveWarningTitle">Call evidence <span class="count-badge" id="liveWarningCount">0</span></h2><p class="panel-intro">Inspect quoted content concerns alongside the help request. Reported danger, service area, and urgency stay in the queue. Review the case’s intake integrity panel for human acceptance before claim or ETA reporting.</p></div></div>
-          <div id="liveWarningList" class="live-warning-list"><p class="queue-loading">No call warnings loaded.</p></div>
+          <div id="liveWarningList" tabindex="0" aria-label="Call evidence" class="live-warning-list"><p class="queue-loading">No call warnings loaded.</p></div><nav id="evidencePagination" class="list-pagination" aria-label="Evidence pages"></nav>
         </section>
 
         <section id="pressure" class="panel pressure-panel" aria-labelledby="pressureTitle">
@@ -261,12 +265,12 @@
           <div class="pressure-grid">
             <div class="suspicious-message">
               <div class="message-source"><span class="sms-icon">▣</span><div><strong id="pressureSourceTitle">No review selected</strong><small id="pressureSourceDetail">Waiting for a call or message</small></div><span class="unverified-badge">UNVERIFIED</span></div>
-              <p id="suspiciousText">Select a scam review or analyze a synthetic message to see transcript evidence.</p>
+              <p id="suspiciousText" tabindex="0" aria-label="Evidence message">Select a scam review or analyze a synthetic message to see transcript evidence.</p>
               <div class="message-caption"><span>⟲</span> Sender details are unverified; caller ID alone does not prove identity.</div>
             </div>
             <div class="trace-results">
               <div class="trace-label">PRESSURE SIGNALS FOUND <span class="trace-count" id="traceCount">0</span></div>
-              <div id="traceSignalList" class="trace-signal-list"><div class="signal-row"><span class="signal-number">—</span><span class="signal-copy"><strong>No review selected</strong><small>Analyze a synthetic example below.</small></span><span class="signal-strength">—</span></div></div>
+              <div id="traceSignalList" tabindex="0" aria-label="Pressure signals" class="trace-signal-list"><div class="signal-row"><span class="signal-number">—</span><span class="signal-copy"><strong>No review selected</strong><small>Analyze a synthetic example below.</small></span><span class="signal-strength">—</span></div></div><nav id="signalsPagination" class="list-pagination" aria-label="Pressure signals pages"></nav>
               <div class="safe-action"><span class="safe-action-icon">✓</span><p><strong>Safer next step</strong><br />Don’t pay or share codes. Verify using contact details you find independently—not a link or number in this message.</p></div>
             </div>
           </div>
@@ -411,6 +415,29 @@
       window.addEventListener('hashchange', fromHash);
       window.addEventListener('popstate', fromHash);
       fromHash();
+    })();
+    </script>
+
+    <script>
+    (() => {
+      let size = 16;
+      let dark = false;
+      try { size = Math.min(24, Math.max(16, Number(localStorage.getItem('pharos-text-size')) || 16)); dark = localStorage.getItem('pharos-theme') === 'dark'; } catch {}
+      function apply() {
+        document.body.style.setProperty('--reading-font', size + 'px');
+        document.body.classList.toggle('dark-theme', dark);
+        document.getElementById('fontSizeValue').textContent = size + ' px';
+        document.getElementById('fontDecrease').disabled = size <= 16;
+        document.getElementById('fontIncrease').disabled = size >= 24;
+        document.getElementById('themeToggle').setAttribute('aria-pressed', String(dark));
+        document.getElementById('themeToggle').textContent = dark ? 'Light theme' : 'Dark theme';
+        try { localStorage.setItem('pharos-text-size', String(size)); localStorage.setItem('pharos-theme', dark ? 'dark' : 'light'); } catch {}
+      }
+      document.getElementById('fontDecrease').addEventListener('click', () => { size = Math.max(16, size - 2); apply(); });
+      document.getElementById('fontIncrease').addEventListener('click', () => { size = Math.min(24, size + 2); apply(); });
+      document.getElementById('fontReset').addEventListener('click', () => { size = 16; apply(); });
+      document.getElementById('themeToggle').addEventListener('click', () => { dark = !dark; apply(); });
+      apply();
     })();
     </script>
     <script src="app.js"></script>

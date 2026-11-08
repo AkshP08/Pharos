@@ -500,3 +500,12 @@ Append a dated note after each meaningful implementation session. Include what c
 - Deadline recommendation: prioritize real intake, changing urgency/area, and transcript-grounded human review; treat recording playback as optional until demonstrated. User requested a feature-by-feature verified/unverified inventory with MVP scores to make the final scope decision together.
 
 - User-requested live redeploy completed: clean source be5e37e, release rel_01M6XVF7R5WSZ2KEDEYK3ZD66W, edge confirmed. Served build.json verified the intended SHA and dirty:false. Resumed the backend QA lane. Deployment does not close remaining current-phone/recording acceptance gates.
+
+
+## November 8, 2026 — Mini: public presentation documentation
+
+- Ramped from the existing product-agent chat and maintained README, system plan, runbook, implementation, and test sources. Added public /manual, /tests, /design, and /demo routes and Beacon product-library navigation.
+- Manual covers caller consent, queue/review, evidence/audio, responder eligibility, explicit status/ETA, callbacks, troubleshooting and current limits. Test document includes 48 acceptance scenarios with expected results and honest execution status, plus extracted JavaScript/Python test inventories. Design includes architecture, sequence and review-state diagrams, data invariants, API/security/retention and release limits.
+- /demo is explicitly pending user feature confirmation, as requested. No video has been built or claimed yet.
+- Typecheck and production build passed. First test attempt was blocked by sandbox loopback restrictions; a concurrent deploy then replaced compiled test artifacts during an elevated rerun. Rebuilt and reran sequentially: all 243 JavaScript checks pass, zero failures. No runtime source defect was inferred from those environment failures. Fixed duplicate SVG marker IDs found by document validation.
+- Manual, tests and design were published to the existing DeepSpace app and visually inspected. Final source-stamp/access checks follow the clean release. Existing voice/phone acceptance gates remain distinct from documentation validation.

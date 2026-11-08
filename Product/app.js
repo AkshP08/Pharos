@@ -13,6 +13,12 @@ let workspaceEpoch = 0;
 let progressDraftDirty = false;
 let progressSubmitting = false;
 let progressDraftContext = '';
+let integrityDraftContext = '';
+let integritySubmitting = false;
+let audioRequestId = 0;
+let audioObjectUrl = '';
+let audioContext = '';
+let audioLoadingContext = '';
 
 const sampleMessage = 'County Rescue Office: Your evacuation seat expires in 5 minutes. Pay a $40 fee by gift card to reserve it. Do not call the county or your request will be cancelled.';
 
@@ -73,6 +79,80 @@ function priorityRail(priority) {
   return ({ immediate: 'rail-red', 'time-sensitive': 'rail-amber', urgent: 'rail-teal', 'follow-up': 'rail-amber' })[priority] || 'rail-teal';
 }
 
+function integrityState(item) {
+  const review = item?.integrityReview;
+  const status = review?.status || 'pending';
+  const canRespond = status === 'clear' || status === 'accepted';
+  const label = ({ pending: 'Review pending', clear: 'No supported concern', 'review-required': 'Human review required', accepted: 'Human accepted', dismissed: 'Human dismissed · retained' })[status] || 'Human review required';
+  return { review, status, canRespond, label };
+}
+
+function integrityScope(item) {
+  const review = item?.integrityReview;
+  return JSON.stringify([item?.id, review?.version, review?.sourceCallId, review?.sourceSequence]);
+}
+
+function renderIntegrityReview(item, changedCase = false) {
+  const { review, status, canRespond, label } = integrityState(item);
+  const context = integrityScope(item);
+  const contextChanged = integrityDraftContext !== context;
+  integrityDraftContext = context;
+  $('#integrityPanel').hidden = false;
+  $('#integrityPanel').className = `integrity-panel integrity-${status}`;
+  $('#integrityBadge').textContent = label;
+  $('#integritySummary').textContent = status === 'clear'
+    ? 'The automated review found no supported integrity concern in the available evidence. This does not verify the caller or establish that the report is true.'
+    : status === 'accepted' ? 'A human accepted this report for response. The decision is scoped to the evidence shown below; new concerns can require review again.'
+      : status === 'dismissed' ? 'A human dismissed this report from response. The case, reported urgency, history, and any existing ownership remain visible. Normal claim and ETA reporting are blocked until a human accepts it.'
+        : status === 'pending' ? 'Automated intake is awaiting review or its analysis is unavailable. A human must accept this report before normal claim or ETA reporting. Reported danger and urgency stay visible.'
+          : 'The available content needs human verification. This is a review concern, not proof of deception. A human must accept this report before normal claim or ETA reporting.';
+  $('#integrityReason').textContent = review?.reason ? `Review reason: “${review.reason}”` : 'No supported review explanation is available yet. Review the transcript and reported facts directly.';
+  $('#integrityMeta').textContent = review ? `Analysis: ${review.analysisStatus || 'unavailable'} · basis: ${review.basis || 'not provided'} · current decision scope: ${review.sourceCallId || 'unavailable'}, sequence ${review.sourceSequence ?? 'unknown'}${review.evidenceCallId && review.evidenceCallId !== review.sourceCallId ? ` · retained concern from earlier call ${review.evidenceCallId}, sequence ${review.evidenceSequence ?? 'unknown'}` : ''} · updated ${fullTime(review.updatedAt)}` : 'Analysis unavailable · source snapshot not yet available';
+  $('#integritySignals').innerHTML = (review?.signals || []).map((signal) => typeof signal === 'string' ? `<li>“${escapeHtml(signal)}”</li>` : `<li><strong>${escapeHtml(signal.label || signal.type || 'Review signal')}</strong>${signal.evidence ? `: “${escapeHtml(signal.evidence)}”` : ''}${signal.explanation ? `<span>${escapeHtml(signal.explanation)}</span>` : ''}</li>`).join('');
+  const decision = review?.decision;
+  $('#integrityDecisionAudit').hidden = !decision;
+  $('#integrityDecisionAudit').textContent = decision ? `Human ${decision.action === 'dismiss' ? 'dismissal' : 'acceptance'}${decision.at ? ` ${fullTime(decision.at)}` : ''}${decision.reason ? `: “${decision.reason}”` : ''}.` : '';
+  const actionable = Boolean(review && Number.isSafeInteger(review.version) && review.sourceCallId && Number.isSafeInteger(review.sourceSequence));
+  $('#integrityReviewForm').hidden = !actionable || item.status === 'resolved';
+  $('#integrityDecisionReason').disabled = integritySubmitting || !actionable;
+  $('#integrityAcceptButton').disabled = integritySubmitting || !actionable || status === 'accepted';
+  $('#integrityDismissButton').disabled = integritySubmitting || !actionable || status === 'dismissed';
+  if (changedCase || contextChanged) {
+    const hadDraft = $('#integrityDecisionReason').value.trim();
+    $('#integrityDecisionReason').value = '';
+    $('#integrityReviewResult').textContent = hadDraft && !changedCase ? 'The evidence snapshot changed. Review the newest transcript before recording a decision.' : '';
+  }
+  $('#integrityHoldNote').hidden = canRespond;
+  $('#integrityHoldNote').textContent = canRespond ? '' : 'Response acceptance is on hold. Assign a verification owner below to clarify the report; this does not dispatch help or change its urgency.';
+}
+
+function clearCallerAudio() {
+  audioRequestId += 1;
+  const player = $('#caseAudioPlayer');
+  player.pause();
+  player.removeAttribute('src');
+  player.load();
+  player.hidden = true;
+  if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
+  audioObjectUrl = '';
+  audioContext = '';
+  audioLoadingContext = '';
+  $('#caseAudioStatus').textContent = '';
+  $('#caseAudioLoadButton').disabled = false;
+  $('#caseAudioClearButton').hidden = true;
+}
+
+function renderCallerAudio(item, changedCase = false) {
+  const metadata = item.audio;
+  const context = JSON.stringify([item.id, metadata?.callId, metadata?.expiresAt]);
+  const available = metadata?.available === true && (!metadata.expiresAt || Date.parse(metadata.expiresAt) > Date.now());
+  if (changedCase || (audioContext && audioContext !== context) || (audioLoadingContext && audioLoadingContext !== context) || !available) clearCallerAudio();
+  $('#caseAudioPanel').hidden = false;
+  $('#caseAudioLoadButton').hidden = !available;
+  $('#caseAudioLoadButton').disabled = Boolean(audioObjectUrl || audioLoadingContext);
+  $('#caseAudioMeta').textContent = available ? `Private caller-only recording · Call ${metadata.callId || 'unavailable'}${Number.isFinite(metadata.durationSeconds) ? ` · ${Math.round(metadata.durationSeconds)} seconds` : ''}${metadata.expiresAt ? ` · expires ${fullTime(metadata.expiresAt)}` : ''}. Loaded only when you request it.` : 'No retained caller audio is available. Transcript-only reports receive the same triage and review; missing audio is not a negative signal.';
+}
+
 function caseExcerpt(item) {
   const caller = (item.turns || []).filter((turn) => turn.role === 'caller').map((turn) => turn.text).join(' ');
   const text = caller || item.transcript || item.title;
@@ -101,7 +181,7 @@ function filteredCases() {
 
 function renderCaseCard(item) {
   const excerpt = caseExcerpt(item);
-  const responseState = item.assignmentNeedsReview ? 'Assignment coverage needs review' : item.assignedTo ? `Claimed by ${appData.responders.find((responder) => responder.id === item.assignedTo)?.name || 'responder'}` : item.followUpOwner ? `Follow-up owned by ${appData.responders.find((responder) => responder.id === item.followUpOwner)?.name || 'responder'}` : !item.zoneId ? 'Location follow-up unassigned' : `${(item.eligibleResponders || []).length} eligible responder${(item.eligibleResponders || []).length === 1 ? '' : 's'}`;
+  const responseState = item.assignmentNeedsReview ? 'Assignment coverage needs review' : item.assignedTo ? `Claimed by ${appData.responders.find((responder) => responder.id === item.assignedTo)?.name || 'responder'}` : item.followUpOwner ? `Follow-up owned by ${appData.responders.find((responder) => responder.id === item.followUpOwner)?.name || 'responder'}` : !integrityState(item).canRespond ? 'Verification owner unassigned' : !item.zoneId ? 'Location follow-up unassigned' : `${(item.eligibleResponders || []).length} eligible responder${(item.eligibleResponders || []).length === 1 ? '' : 's'}`;
   const warning = item.reassessmentRequired ? ' · New report needs reassessment' : item.followUp && item.priority !== 'follow-up' ? ' · Location/details need follow-up' : '';
   const lastReport = latestCallerUpdate(item);
   const updated = lastReport?.kind === 'caller-update';
@@ -111,12 +191,8 @@ function renderCaseCard(item) {
     <span class="request-main"><span class="request-topline"><strong>${escapeHtml(item.title)}</strong><time>${updated ? 'Updated ' : ''}${escapeHtml(formatAge(queueAge))}</time></span>
     <span class="request-meta"><span class="case-id">${escapeHtml(item.id)}</span><span>·</span><span>${escapeHtml(item.zoneName || 'Unassigned area')}</span>${item.synthetic ? '<span class="synthetic-case-label">SYNTHETIC</span>' : ''}</span>
     <span class="request-excerpt">“${escapeHtml(excerpt)}”</span>
-    <span class="request-bottom"><span class="tag ${item.priority === 'immediate' ? 'tag-critical' : item.priority === 'time-sensitive' ? 'tag-time' : 'tag-review'}">${escapeHtml(priorityLabel(item.priority))}${escapeHtml(warning)}</span><span class="response-state"><i></i>${escapeHtml(responseState)}</span></span></span>
+    <span class="request-bottom"><span class="tag ${item.priority === 'immediate' ? 'tag-critical' : item.priority === 'time-sensitive' ? 'tag-time' : 'tag-review'}">${escapeHtml(priorityLabel(item.priority))}${escapeHtml(warning)}</span><span class="response-state"><i></i>${escapeHtml(responseState)}</span></span><span class="integrity-queue-badge integrity-${escapeHtml(integrityState(item).status)}">${escapeHtml(integrityState(item).label)}</span></span>
   </button>`;
-}
-
-function renderFollowupCard(item) {
-  return `<button class="followup-card" data-case-id="${escapeHtml(item.id)}"><span class="followup-icon">?</span><div><strong>${escapeHtml(item.zoneId ? 'Priority/details need confirmation' : 'Location not matched')}</strong><p>${escapeHtml(item.id)} · ${escapeHtml(item.title)} · Keep visible for responder follow-up.</p></div><span class="chevron">›</span></button>`;
 }
 
 function updateCounts() {
@@ -125,11 +201,10 @@ function updateCounts() {
   const immediate = cases.filter((item) => item.priority === 'immediate').length;
   const followup = cases.filter((item) => item.priority === 'follow-up' || item.followUp).length;
   const open = appData.cases.filter((item) => item.status !== 'resolved').length;
-  const reviews = appData.scamReviews || [];
-  const alerts = appData.alerts || [];
+  const alerts = responderEvidenceReviews();
   $('#activeCount').textContent = String(open).padStart(2, '0');
   $('#urgentCount').textContent = String(immediate).padStart(2, '0');
-  $('#scamCount').textContent = String(reviews.filter((review) => review.level !== 'low').length).padStart(2, '0');
+  $('#scamCount').textContent = String(cases.filter((item) => !integrityState(item).canRespond).length).padStart(2, '0');
   $('#queueBadge').textContent = String(visibleCases().length);
   $('#allTabCount').textContent = String(cases.length);
   $('#immediateTabCount').textContent = String(immediate);
@@ -192,9 +267,11 @@ function renderCaseHistory(item, changedCase = false) {
 }
 
 function responseProgressView(item, now = Date.now()) {
-  const canEdit = Boolean(item.assignedTo) && item.status !== 'resolved' && !item.assignmentNeedsReview;
+  const accepted = integrityState(item).canRespond;
+  const canEdit = Boolean(item.assignedTo) && item.status !== 'resolved' && !item.assignmentNeedsReview && accepted;
   const base = { title: 'Request received · arrival not confirmed', detail: 'A case or claim alone does not confirm that a responder is travelling.', etaText: '', reportedAt: '', tone: 'unconfirmed', canEdit };
   if (item.status === 'resolved') return { ...base, title: 'Case resolved · no active arrival estimate', detail: 'Resolution does not by itself establish a responder arrival time.', canEdit: false };
+  if (!accepted) return { ...base, title: 'Human acceptance required · response status held', detail: 'Review the intake evidence and accept this report before confirming response status. Any earlier travel report or ETA is not shown as a current confirmation while this review is held.', tone: 'review-needed', canEdit: false };
   const progress = item.responseProgress;
   if (item.assignmentNeedsReview || progress?.state === 'review-needed') return { ...base, title: 'Response status needs reconfirmation', detail: 'New reported facts or changed coverage require a fresh response-desk confirmation. Any earlier travel status or arrival estimate is no longer current.', tone: 'review-needed' };
   if (!item.assignedTo || !progress || progress.responderId !== item.assignedTo) return base;
@@ -218,7 +295,7 @@ function updateProgressEtaField(canEdit = true) {
 
 function renderResponseProgress(item, changedCase = false) {
   const view = responseProgressView(item);
-  const context = `${item.id}|${item.assignedTo || ''}|${Boolean(item.assignmentNeedsReview)}|${item.responseProgress?.state === 'review-needed' ? item.responseProgress.updatedAt || 'review-needed' : ''}`;
+  const context = `${item.id}|${item.assignedTo || ''}|${Boolean(item.assignmentNeedsReview)}|${integrityState(item).canRespond}|${item.responseProgress?.state === 'review-needed' ? item.responseProgress.updatedAt || 'review-needed' : ''}`;
   const contextChanged = progressDraftContext !== context;
   progressDraftContext = context;
   $('#responseProgressTitle').textContent = view.title;
@@ -267,6 +344,8 @@ function setSelectedCase(caseId) {
   $('#caseStatus').textContent = ({ new: 'Awaiting review', claimed: 'Claimed', 'follow-up': 'Needs follow-up', resolved: 'Resolved' })[item.status] || 'Needs review';
   $('#caseMessage').textContent = item.transcript || caseExcerpt(item);
   $('#caseTranscriptCaption').textContent = `${item.synthetic ? 'Synthetic scenario' : 'Caller-consented transcript'} · latest linked report · ${item.callId ? `Call ${item.callId}` : 'No call ID'}`;
+  renderIntegrityReview(item, changedCase);
+  renderCallerAudio(item, changedCase);
   renderCaseHistory(item, changedCase);
   renderResponseProgress(item, changedCase);
   $('#priorityLabel').textContent = priorityLabel(item.priority);
@@ -286,22 +365,24 @@ function setSelectedCase(caseId) {
   const select = $('#responderSelect');
   const previousResponder = changedCase ? '' : select.value;
   const needsLocationOwner = !item.zoneId;
-  const eligible = needsLocationOwner
+  const verificationHold = !integrityState(item).canRespond;
+  const followupMode = needsLocationOwner || verificationHold;
+  const eligible = followupMode
     ? eligibleFollowupOwners(item)
     : appData.responders.filter((responder) => (item.eligibleResponders || []).includes(responder.id) || item.assignedTo === responder.id);
-  select.innerHTML = `<option value="">${needsLocationOwner ? 'Choose location follow-up owner' : 'Choose eligible responder'}</option>` + eligible.map((responder) => `<option value="${escapeHtml(responder.id)}">${escapeHtml(responder.name)} · ${escapeHtml(responder.organization)}</option>`).join('');
-  select.value = (needsLocationOwner ? item.followUpOwner : item.assignedTo) || (eligible.some((responder) => responder.id === previousResponder) ? previousResponder : '');
+  select.innerHTML = `<option value="">${verificationHold ? 'Choose verification owner' : needsLocationOwner ? 'Choose location follow-up owner' : 'Choose eligible responder'}</option>` + eligible.map((responder) => `<option value="${escapeHtml(responder.id)}">${escapeHtml(responder.name)} · ${escapeHtml(responder.organization)}</option>`).join('');
+  select.value = (followupMode ? item.followUpOwner : item.assignedTo) || (eligible.some((responder) => responder.id === previousResponder) ? previousResponder : '');
   const resolved = item.status === 'resolved';
-  select.disabled = resolved || !eligible.length || (!needsLocationOwner && Boolean(item.assignedTo));
-  $('#assignButton').disabled = resolved || !eligible.length || (!needsLocationOwner && Boolean(item.assignedTo));
-  $('#assignButton').textContent = needsLocationOwner ? 'Assign follow-up owner' : item.assignedTo ? 'Case claimed' : 'Claim for responder →';
-  $('#responderSelectLabel').textContent = needsLocationOwner ? 'Responder responsible for location follow-up' : 'Responder to claim this case';
+  select.disabled = resolved || !eligible.length || (!followupMode && Boolean(item.assignedTo));
+  $('#assignButton').disabled = resolved || !eligible.length || (!followupMode && Boolean(item.assignedTo));
+  $('#assignButton').textContent = verificationHold ? 'Assign verification owner' : needsLocationOwner ? 'Assign follow-up owner' : item.assignedTo ? 'Case claimed' : 'Claim for responder →';
+  $('#responderSelectLabel').textContent = verificationHold ? 'Responder responsible for verifying this report' : needsLocationOwner ? 'Responder responsible for location follow-up' : 'Responder to claim this case';
   const owner = appData.responders.find((responder) => responder.id === item.assignedTo);
   const followupOwner = appData.responders.find((responder) => responder.id === item.followUpOwner);
   const ownerDetails = [];
   if (owner) ownerDetails.push(`Response owner: ${owner.name} · ${owner.organization}.`);
-  if (followupOwner) ownerDetails.push(`Location follow-up owner: ${followupOwner.name} · ${followupOwner.organization}. This is responsibility to clarify the report, not a dispatch assignment.`);
-  if (!owner && !followupOwner) ownerDetails.push(resolved ? 'Resolved · no active owner.' : needsLocationOwner ? 'Location unconfirmed · assign an accountable follow-up owner before this report is overlooked.' : 'Unclaimed · choose an eligible responder to establish ownership.');
+  if (followupOwner) ownerDetails.push(`${verificationHold ? 'Verification' : 'Location follow-up'} owner: ${followupOwner.name} · ${followupOwner.organization}. This is responsibility to clarify the report, not a dispatch assignment.`);
+  if (!owner && !followupOwner) ownerDetails.push(resolved ? 'Resolved · no active owner.' : verificationHold ? 'Human acceptance pending · assign an accountable verification owner to clarify this report.' : needsLocationOwner ? 'Location unconfirmed · assign an accountable follow-up owner before this report is overlooked.' : 'Unclaimed · choose an eligible responder to establish ownership.');
   ownerDetails.push('Claiming alone does not confirm travel or arrival.');
   $('#caseOwner').textContent = ownerDetails.join(' ');
   $('#assignmentReviewNote').hidden = !item.assignmentNeedsReview;
@@ -324,6 +405,10 @@ function setSelectedCase(caseId) {
   $('#priorityOverrideAudit').hidden = !override;
   $('#priorityOverrideAudit').textContent = override ? `Last reviewed ${fullTime(override.at)}${override.previousPriority ? ` · previously ${priorityLabel(override.previousPriority)}` : ''}. Reason: ${override.reason}` : '';
   document.querySelectorAll('[data-case-id]').forEach((card) => card.classList.toggle('selected', card.dataset.caseId === item.id));
+  if (changedCase) {
+    selectedPressureId = null;
+    renderPressureTrace(selectedPressureReview());
+  }
 }
 
 function renderQueue() {
@@ -342,18 +427,27 @@ function renderQueue() {
     tab.classList.toggle('selected', selected);
     tab.setAttribute('aria-selected', String(selected));
   });
-  const actionCases = activeFilter === 'all' ? items.filter((item) => item.priority !== 'follow-up') : activeFilter === 'followup' ? [] : items;
-  const followupCases = activeFilter === 'all' ? items.filter((item) => item.priority === 'follow-up') : activeFilter === 'followup' ? items : [];
-  $('.followup-label').hidden = activeFilter === 'resolved';
-  followups.hidden = activeFilter === 'resolved';
-  queue.innerHTML = actionCases.length ? actionCases.map(renderCaseCard).join('') : `<div class="queue-loading">${activeFilter === 'followup' ? 'Follow-up cases are shown below.' : 'No matching requests in this area.'}</div>`;
-  followups.innerHTML = followupCases.length ? followupCases.map(renderFollowupCard).join('') : `<div class="queue-loading">${activeFilter === 'immediate' ? 'Immediate cases stay in the ranked queue above.' : 'No follow-up cases in this area.'}</div>`;
+  $('.followup-label').hidden = true;
+  followups.hidden = true;
+  followups.innerHTML = '';
+  queue.innerHTML = items.length ? items.map(renderCaseCard).join('') : '<div class="queue-loading">No matching requests in this area.</div>';
   updateCounts();
   if (selectedCaseId) setSelectedCase(selectedCaseId);
   else showEmptyCase();
 }
 
 function showEmptyCase() {
+  clearCallerAudio();
+  integrityDraftContext = '';
+  $('#integrityPanel').hidden = true;
+  $('#integrityDecisionReason').value = '';
+  $('#integrityReviewResult').textContent = '';
+  $('#integrityReason').textContent = '';
+  $('#integrityMeta').textContent = '';
+  $('#integritySignals').innerHTML = '';
+  $('#integrityDecisionAudit').textContent = '';
+  $('#caseAudioPanel').hidden = true;
+  $('#caseAudioMeta').textContent = '';
   $('#caseId').textContent = '—';
   $('#caseTitle').textContent = 'No case selected';
   $('#caseLocation').textContent = 'Waiting for a request in this area';
@@ -436,14 +530,29 @@ function warningDeliveryLabel(value, displayedAt) {
   return ({ accepted: 'Provider accepted; phone display unconfirmed', available: 'Available in app', sent: 'Provider sent; phone display unconfirmed', delivered: 'Provider delivered; phone display unconfirmed', pending: 'Delivery pending', failed: 'Delivery failed', disabled: 'Delivery not configured', 'not-configured': 'Delivery not configured', skipped: 'Delivery skipped' })[value] || 'Delivery unconfirmed';
 }
 
+function caseEvidenceReview(item) {
+  const { review, label, canRespond } = integrityState(item);
+  if (!review) return null;
+  const callId = review.evidenceCallId || review.sourceCallId || item.callId;
+  const currentTranscript = !review.evidenceCallId || review.evidenceCallId === item.callId;
+  return { id: `integrity:${item.id}`, caseId: item.id, callId, level: canRespond ? 'low' : 'medium', headline: `${item.id} · ${label}`, signals: review.signals || [], text: currentTranscript ? item.transcript : '', createdAt: review.updatedAt, synthetic: item.synthetic, integrityStatus: review.status, nextStep: canRespond ? 'Confirm reported facts, service area, and eligible response ownership. No supported concern is not proof that a report is true.' : 'Review the quoted evidence and available consented caller audio. Record a human acceptance or dismissal reason in this case’s intake integrity panel; reported urgency stays unchanged.' };
+}
+
+function responderEvidenceReviews() {
+  const caseReviews = appData.cases.filter((item) => !integrityState(item).canRespond || item.integrityReview?.signals?.length).map(caseEvidenceReview).filter(Boolean);
+  return [...caseReviews, ...(appData.alerts || [])];
+}
+
 function renderLiveWarnings() {
-  const alerts = [...(appData.alerts || [])].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const alerts = responderEvidenceReviews().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   $('#liveWarningCount').textContent = String(alerts.length);
-  $('#liveWarningList').innerHTML = alerts.length ? alerts.slice(0, 8).map((alert) => `<button type="button" class="live-warning-card ${alert.level === 'high' ? 'warning-high' : 'warning-review'}" data-alert-id="${escapeHtml(alert.id)}"><span class="warning-card-head"><strong>${escapeHtml(alert.headline || 'Possible pressure pattern')}</strong><time>${escapeHtml(formatAge(alert.createdAt))}</time></span><span class="warning-card-meta">Call ${escapeHtml(alert.callId || 'unknown')} · ${escapeHtml(warningDeliveryLabel(alert.deliveryStatus, alert.displayedAt))}</span><span class="warning-card-evidence">${escapeHtml((alert.signals || []).slice(0, 2).map((signal) => `“${signal.evidence}”`).join(' · '))}</span><span class="warning-card-action">Review evidence and safe next step →</span></button>`).join('') : '<p class="queue-loading">No call warnings yet. A routed call can produce a warning as its transcript is analyzed.</p>';
+  $('#liveWarningList').innerHTML = alerts.length ? alerts.slice(0, 8).map((alert) => `<button type="button" class="live-warning-card ${alert.level === 'high' ? 'warning-high' : 'warning-review'}" data-alert-id="${escapeHtml(alert.id)}"><span class="warning-card-head"><strong>${escapeHtml(alert.headline || 'Possible pressure pattern')}</strong><time>${escapeHtml(formatAge(alert.createdAt))}</time></span><span class="warning-card-meta">Call ${escapeHtml(alert.callId || 'unknown')} · ${alert.integrityStatus ? 'Responder intake review' : `Historical notification record · ${escapeHtml(warningDeliveryLabel(alert.deliveryStatus, alert.displayedAt))}`}</span><span class="warning-card-evidence">${escapeHtml((alert.signals || []).slice(0, 2).map((signal) => `“${signal.evidence}”`).join(' · '))}</span><span class="warning-card-action">Review evidence and human next step →</span></button>`).join('') : '<p class="queue-loading">No case concerns are loaded. Pending or flagged intake reports remain in the urgency queue for human review.</p>';
 }
 
 function selectedPressureReview() {
-  return [...(appData.alerts || []), ...(appData.scamReviews || [])].find((review) => review.id === selectedPressureId) || appData.alerts?.[0] || appData.scamReviews?.[0] || null;
+  const reviews = [...responderEvidenceReviews(), ...(appData.scamReviews || [])];
+  const selected = appData.cases.find((item) => item.id === selectedCaseId);
+  return reviews.find((review) => review.id === selectedPressureId) || (selected && !integrityState(selected).canRespond ? caseEvidenceReview(selected) : null) || reviews[0] || null;
 }
 
 function renderResponderCoverage() {
@@ -503,8 +612,6 @@ function updateDataMode() {
   $('#voiceIntakeCopy').textContent = voiceReady
     ? 'Residents call the Pharos test line. Short spoken answers become a transcript and a case for human responders to review.'
     : 'The Photon → LiveKit phone route still needs setup. The workbench below tests the backend with fictional transcripts; residents do not need to fill out a website form.';
-  $('#guardEnrollmentButton').disabled = appData.mode !== 'secured';
-  if (appData.mode !== 'secured') $('#guardEnrollmentStatus').textContent = 'Test-phone enrollment requires a secured responder session.';
   if (appData.mode === 'secured') {
     modePill.textContent = 'SECURED · FIXTURES VISIBLE';
     status.textContent = voiceReady ? 'Protected data · Photon voice route ready' : 'Protected data · Live call route not configured';
@@ -516,6 +623,9 @@ function updateDataMode() {
 
 function lockWorkspace() {
   workspaceEpoch += 1;
+  clearCallerAudio();
+  integritySubmitting = false;
+  integrityDraftContext = '';
   overviewRequestId += 1;
   appData = { incidents: [], zones: [], responders: [], cases: [], calls: [], scamReviews: [], alerts: [], mode: 'secured', role: null };
   appHealth = null;
@@ -531,7 +641,7 @@ function lockWorkspace() {
   renderLiveWarnings();
   renderPressureTrace(null);
   renderResponderCoverage();
-  for (const id of ['transcriptInput', 'messageInput', 'priorityOverrideReason', 'responseEtaMinutes', 'responderNameInput', 'responderOrgInput', 'guideInput']) {
+  for (const id of ['transcriptInput', 'messageInput', 'priorityOverrideReason', 'integrityDecisionReason', 'responseEtaMinutes', 'responderNameInput', 'responderOrgInput', 'guideInput']) {
     const element = $(`#${id}`);
     if (element) element.value = '';
   }
@@ -558,10 +668,6 @@ function lockWorkspace() {
   $('#workspaceRole').textContent = 'Beacon workspace';
   $('#workspaceSession').textContent = 'Sign-in required';
   $('#signOutButton').hidden = true;
-  $('#guardEnrollmentUrl').value = '';
-  $('#guardEnrollmentOpen').removeAttribute('href');
-  $('#guardEnrollmentResult').hidden = true;
-  $('#guardEnrollmentStatus').textContent = '';
 }
 
 async function loadOverview(options = {}) {
@@ -697,7 +803,9 @@ $('#assignButton').addEventListener('click', async () => {
   const item = appData.cases.find((candidate) => candidate.id === selectedCaseId);
   const responderId = $('#responderSelect').value;
   if (!item || !responderId) return showToast('Choose an eligible responder or follow-up owner.');
-  const locationFollowup = !item.zoneId;
+  if (item.status === 'resolved') return;
+  const verificationHold = !integrityState(item).canRespond;
+  const locationFollowup = !item.zoneId || verificationHold;
   $('#assignButton').disabled = true;
   try {
     const result = await api(`/api/cases/${encodeURIComponent(item.id)}/${locationFollowup ? 'followup-owner' : 'claim'}`, { method: 'POST', body: JSON.stringify({ responderId }) });
@@ -705,7 +813,7 @@ $('#assignButton').addEventListener('click', async () => {
     const caseRecord = result.caseRecord || appData.cases.find((candidate) => candidate.id === item.id);
     if (caseRecord) setSelectedCase(caseRecord.id);
     const responder = result.responder || appData.responders.find((candidate) => candidate.id === responderId);
-    showToast(locationFollowup ? `${item.id}: ${responder?.name || 'Responder'} owns location follow-up. No dispatch was sent.` : `${item.id} claimed by ${responder?.name || 'responder'}. No external dispatch was sent.`);
+    showToast(locationFollowup ? `${item.id}: ${responder?.name || 'Responder'} owns ${verificationHold ? 'verification' : 'location follow-up'}. No dispatch was sent.` : `${item.id} claimed by ${responder?.name || 'responder'}. No external dispatch was sent.`);
   } catch (error) {
     showToast(error.message);
     if (selectedCaseId) setSelectedCase(selectedCaseId);
@@ -758,7 +866,7 @@ $('#responseProgressForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const item = appData.cases.find((candidate) => candidate.id === selectedCaseId);
   if (!item || !responseProgressView(item).canEdit) {
-    $('#responseProgressResult').textContent = 'An eligible assigned responder and current coverage are required before reporting response status.';
+    $('#responseProgressResult').textContent = 'Human acceptance, an eligible assigned responder, and current coverage are required before reporting response status.';
     return;
   }
   const state = $('#responseProgressState').value;
@@ -829,36 +937,86 @@ $('#signOutButton').addEventListener('click', async () => {
   } catch (error) { showToast(error.message); }
 });
 
-$('#guardEnrollmentButton').addEventListener('click', async () => {
-  const button = $('#guardEnrollmentButton');
-  const status = $('#guardEnrollmentStatus');
-  button.disabled = true;
-  status.textContent = 'Creating a private 24-hour guarded-demo enrollment…';
-  $('#guardEnrollmentResult').hidden = true;
-  $('#guardEnrollmentUrl').value = '';
-  $('#guardEnrollmentOpen').removeAttribute('href');
+async function recordIntegrityDecision(decision) {
+  const item = appData.cases.find((candidate) => candidate.id === selectedCaseId);
+  if (!item || integritySubmitting || item.status === 'resolved') return;
+  const review = item.integrityReview;
+  if (!review || !Number.isSafeInteger(review.version) || !review.sourceCallId || !Number.isSafeInteger(review.sourceSequence)) {
+    $('#integrityReviewResult').textContent = 'The evidence snapshot is unavailable. Refresh before recording a decision.';
+    return;
+  }
+  const reason = $('#integrityDecisionReason').value.trim();
+  if (reason.length < 8 || reason.length > 1000) {
+    $('#integrityReviewResult').textContent = 'Record a reason between 8 and 1,000 characters for the human decision.';
+    return;
+  }
+  const epoch = workspaceEpoch;
+  integritySubmitting = true;
+  renderIntegrityReview(item);
+  $('#integrityReviewResult').textContent = 'Saving the human decision against this evidence snapshot…';
   try {
-    const result = await api('/api/guard/enrollment', { method: 'POST', body: '{}' });
-    const url = new URL(result.warningUrl, window.location.href);
-    if (url.origin !== window.location.origin || url.pathname !== '/guard.html' || !url.hash) throw new Error('The server returned an unexpected test-phone setup link.');
-    $('#guardEnrollmentUrl').value = url.href;
-    $('#guardEnrollmentOpen').href = url.href;
-    $('#guardEnrollmentResult').hidden = false;
-    status.textContent = `Private link ready${result.expiresAt ? ` until ${fullTime(result.expiresAt)}` : ' for 24 hours'}. Open it on the consenting test phone, add it to the Home Screen, then enable notifications before the guarded call. Notification display is not proof that a person read it.`;
-  } catch (error) { status.textContent = error.message; }
-  finally { button.disabled = false; }
-});
+    await api(`/api/cases/${encodeURIComponent(item.id)}/integrity-review`, { method: 'POST', body: JSON.stringify({ decision, reason, expectedVersion: review.version, expectedSourceCallId: review.sourceCallId, expectedSequence: review.sourceSequence }) });
+    await loadOverview({ quiet: true });
+    if (epoch !== workspaceEpoch) return;
+    if (selectedCaseId === item.id) {
+      $('#integrityDecisionReason').value = '';
+      $('#integrityReviewResult').textContent = decision === 'accept' ? 'Human acceptance recorded. Coverage and response ownership still require confirmation.' : 'Human dismissal recorded. The case and reported urgency remain visible; normal claim and ETA reporting stay blocked.';
+    }
+    showToast(`${item.id}: human ${decision === 'accept' ? 'acceptance' : 'dismissal'} saved with a reason.`);
+  } catch (error) {
+    if (epoch !== workspaceEpoch) return;
+    if (error.status === 401) { lockWorkspace(); return; }
+    if (selectedCaseId === item.id) $('#integrityReviewResult').textContent = error.status === 409 ? `${error.message} Refresh and review the newest evidence before deciding.` : error.message;
+  } finally {
+    if (epoch === workspaceEpoch) {
+      integritySubmitting = false;
+      const current = appData.cases.find((candidate) => candidate.id === selectedCaseId);
+      if (current) renderIntegrityReview(current);
+    }
+  }
+}
+$('#integrityReviewForm').addEventListener('submit', (event) => { event.preventDefault(); return recordIntegrityDecision('accept'); });
+$('#integrityAcceptButton').addEventListener('click', (event) => { event.preventDefault(); return recordIntegrityDecision('accept'); });
+$('#integrityDismissButton').addEventListener('click', (event) => { event.preventDefault(); return recordIntegrityDecision('dismiss'); });
 
-$('#guardEnrollmentCopy').addEventListener('click', async () => {
-  const input = $('#guardEnrollmentUrl');
-  if (!input.value) return;
+$('#caseAudioClearButton').addEventListener('click', () => {
+  clearCallerAudio();
+  const item = appData.cases.find((candidate) => candidate.id === selectedCaseId);
+  if (item) renderCallerAudio(item);
+});
+$('#caseAudioLoadButton').addEventListener('click', async () => {
+  const item = appData.cases.find((candidate) => candidate.id === selectedCaseId);
+  if (!item?.audio?.available || appData.mode !== 'secured' || audioLoadingContext || audioObjectUrl) return;
+  if (item.audio.expiresAt && Date.parse(item.audio.expiresAt) <= Date.now()) { renderCallerAudio(item); return; }
+  const epoch = workspaceEpoch;
+  const requestId = ++audioRequestId;
+  const context = JSON.stringify([item.id, item.audio.callId, item.audio.expiresAt]);
+  const stillCurrent = () => epoch === workspaceEpoch && requestId === audioRequestId && selectedCaseId === item.id;
+  audioLoadingContext = context;
+  $('#caseAudioLoadButton').disabled = true;
+  $('#caseAudioStatus').textContent = 'Loading the private caller recording…';
   try {
-    await navigator.clipboard.writeText(input.value);
-    $('#guardEnrollmentStatus').textContent = 'Private link copied. Share it only with the consenting test recipient; it expires after 24 hours.';
-  } catch {
-    input.focus();
-    input.select();
-    $('#guardEnrollmentStatus').textContent = 'Private link selected. Copy it using your device controls and share only with the consenting test recipient.';
+    const response = await fetch(`/api/cases/${encodeURIComponent(item.id)}/audio`, { credentials: 'same-origin', cache: 'no-store' });
+    if (!stillCurrent()) return;
+    if (response.status === 401) { lockWorkspace(); return; }
+    if (!response.ok) throw new Error(response.status === 404 ? 'No consented recording is available. Continue with the transcript; missing audio does not count against this report.' : `Caller audio could not be loaded (${response.status}).`);
+    const blob = await response.blob();
+    if (!stillCurrent()) return;
+    const current = appData.cases.find((candidate) => candidate.id === selectedCaseId);
+    if (!current?.audio?.available || (current.audio.expiresAt && Date.parse(current.audio.expiresAt) <= Date.now()) || JSON.stringify([current.id, current.audio.callId, current.audio.expiresAt]) !== context) return;
+    audioObjectUrl = URL.createObjectURL(blob);
+    audioContext = context;
+    const player = $('#caseAudioPlayer');
+    player.src = audioObjectUrl;
+    player.hidden = false;
+    $('#caseAudioClearButton').hidden = false;
+    $('#caseAudioStatus').textContent = 'Recording ready. Press Play to listen; it will not play automatically. Tone and pacing provide context, not proof of deception.';
+  } catch (error) { if (stillCurrent()) $('#caseAudioStatus').textContent = error.message; }
+  finally {
+    if (stillCurrent()) {
+      audioLoadingContext = '';
+      $('#caseAudioLoadButton').disabled = Boolean(audioObjectUrl);
+    }
   }
 });
 
@@ -916,8 +1074,9 @@ function groundedGuideAnswer(question) {
   const open = appData.cases.filter((item) => item.status !== 'resolved');
   const area = appData.zones.find((zone) => zone.id === currentZoneId());
   const review = selectedPressureReview();
-  const snapshot = `This desk has ${open.length} open request${open.length === 1 ? '' : 's'}, ${open.filter((item) => item.priority === 'immediate').length} marked immediate, and ${open.filter((item) => !item.zoneId).length} with an unconfirmed service area.`;
-  if (/privacy|retain|retention|store|consent|personal data/i.test(question)) return `The Pharos backend receives transcript text after consent. The configured text retention is ${appHealth?.transcriptRetentionHours || 24} hours; the phone providers have their own processing policies. Do not enter real resident information in a fictional demo. I can only see records currently loaded in this desk.`;
+  const snapshot = `This desk has ${open.length} open request${open.length === 1 ? '' : 's'}, ${open.filter((item) => item.priority === 'immediate').length} marked immediate, ${open.filter((item) => !item.zoneId).length} with an unconfirmed service area, and ${open.filter((item) => !integrityState(item).canRespond).length} awaiting human acceptance before normal response actions.`;
+  if (/privacy|retain|retention|store|consent|personal data|audio|recording/i.test(question)) return `Pharos receives transcript text after consent. Optional caller-only audio requires explicit recording consent, is loaded manually beside the transcript, and is cleared from this desk on case change or logout. Tone and pacing are context, not fraud proof; missing audio does not count against a report. The configured text retention is ${appHealth?.transcriptRetentionHours || 24} hours; the phone providers have their own processing policies. I can only see records currently loaded in this desk.`;
+  if (/integrity|accept|dismiss|flag|human review|held|hold/i.test(question)) return selected ? `${selected.id}: ${integrityState(selected).label}. ${selected.integrityReview?.reason ? `Review reason: “${selected.integrityReview.reason}”` : 'No supported explanation is available yet.'} ${integrityState(selected).canRespond ? 'Coverage and ownership still determine response eligibility.' : 'A human must accept this evidence snapshot before normal claim or ETA reporting; a verification owner can clarify it meanwhile.'} Every report retains its reported danger, service area, and urgency rank. Dismissal keeps the record visible and does not silently cancel an existing assignment. Content signals cannot prove deception.` : 'Select a case to inspect its intake review. Pending, concerning, unavailable, and dismissed reports need human acceptance before normal claim or ETA reporting; they remain in the urgency queue.';
   if (/warning|scam|manipulat|pressure|verify|suspicious/i.test(question)) {
     if (!review) return 'No pressure review is loaded yet. Use a fictional message or a routed test call. A warning should identify exact wording and suggest independent verification; it cannot establish the caller’s identity.';
     const signals = (review.signals || []).slice(0, 3).map((signal) => `${signal.label}: “${signal.evidence}”${signal.explanation ? ` — ${signal.explanation}` : ''}`).join('\n');
@@ -937,12 +1096,12 @@ function groundedGuideAnswer(question) {
   if (/selected|this case|why|priority|rank|urgent/i.test(question)) {
     if (!selected) return 'Select a case in the queue first. I can then explain the reported facts, priority reason, service area, and ownership.';
     const owner = appData.responders.find((responder) => responder.id === (selected.assignedTo || selected.followUpOwner));
-    return `${selected.id} · ${priorityLabel(selected.priority)}\n${selected.priorityReason}\nArea: ${selected.zoneName || 'Unassigned; location follow-up needed'}. ${selected.assignedTo ? 'Response owner' : 'Location follow-up owner'}: ${owner ? `${owner.name}, ${owner.organization}` : 'unclaimed'}.${selected.assignmentNeedsReview ? '\nThe response assignment needs review after a location correction.' : ''}${selected.priorityOverride ? `\nHuman review reason: ${selected.priorityOverride.reason}` : ''}\nA responder can review the priority with a recorded reason. Claiming does not send a dispatch.`;
+    return `${selected.id} · ${priorityLabel(selected.priority)}\n${selected.priorityReason}\nIntake review: ${integrityState(selected).label}.${!integrityState(selected).canRespond ? ' Human acceptance is required before normal claim or ETA reporting; urgency stays unchanged.' : ''}\nArea: ${selected.zoneName || 'Unassigned; location follow-up needed'}. ${selected.assignedTo ? 'Response owner' : !integrityState(selected).canRespond ? 'Verification owner' : 'Location follow-up owner'}: ${owner ? `${owner.name}, ${owner.organization}` : 'unclaimed'}.${selected.assignmentNeedsReview ? '\nThe response assignment needs review after a location correction.' : ''}${selected.priorityOverride ? `\nHuman review reason: ${selected.priorityOverride.reason}` : ''}\nA responder can review the priority with a recorded reason. Claiming does not send a dispatch.`;
   }
   if (/area|coverage|responder|capacity|assign|claim/i.test(question)) {
     const available = appData.responders.filter((responder) => responder.approved && responder.available && responder.assignedCount < responder.capacity);
     const scope = area ? area.name : currentZoneId() === 'unassigned' ? 'the location-follow-up queue' : 'all service areas';
-    return `The desk is filtered to ${scope}. ${available.length} approved responder profile${available.length === 1 ? ' has' : 's have'} remaining capacity across the workspace. A case can be claimed only when service area and capabilities match. ${selected ? `${selected.id} currently lists ${(selected.eligibleResponders || []).length} eligible profile(s).` : 'Select a case to see its eligible responders.'} The area dropdown filters this shared demo desk; it is not an individual access-control boundary.`;
+    return `The desk is filtered to ${scope}. ${available.length} approved responder profile${available.length === 1 ? ' has' : 's have'} remaining capacity across the workspace. Normal claim requires a clear or human-accepted intake review, matching service area, and capabilities. Held reports can receive an accountable verification owner without dispatch. ${selected ? `${selected.id} currently lists ${(selected.eligibleResponders || []).length} response-eligible profile(s).` : 'Select a case to see its eligible responders.'} The area dropdown filters this shared demo desk; it is not an individual access-control boundary.`;
   }
   if (/voice|photon|livekit|transcript|speech|phone|hotline|call/i.test(question)) return appHealth?.voiceRoute === 'ready' ? 'The configured phone route is marked ready. Photon routes calls to LiveKit, which transcribes short spoken answers. Consented text reaches this desk for evidence-based priority and area review. I cannot listen to calls outside that route.' : 'The phone route is not yet marked ready in the backend. Photon → LiveKit → speech recognition → Pharos is the intended path. The transcript workbench already exercises the case-processing backend, but it is not a live audio test.';
   if (/resolve|close|reopen|follow.?up/i.test(question)) return 'Resolve releases the active assignment and keeps the record in the Resolved tab. Reopen returns it to human review. Mark for follow-up records missing work without sending a message or dispatch. Use a priority review with a reason if the reported facts change.';

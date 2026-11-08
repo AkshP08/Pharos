@@ -565,15 +565,29 @@ button:disabled { cursor: default; opacity: .55; transform: none; box-shadow: no
 }
 .assignment-review-note { margin: 9px 0; padding: 9px 10px; border: 1px solid #e8c7b4; border-radius: 6px; background: #fff5eb; color: #8f5d3e; font-size: 8px; line-height: 1.5; }
 .release-assignment-button { min-height: 29px; color: #875438; font-size: 8px; }
-.guard-enrollment { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 13px; padding: 13px; border: 1px solid #d9e6df; border-radius: 8px; background: #f5faf7; }
-.guard-enrollment > div:first-child { flex: 1 1 300px; }
-.guard-enrollment strong { color: #3f6555; font-size: 10px; }
-.guard-enrollment p { margin: 5px 0 0; color: #6b8378; font-size: 8px; line-height: 1.6; }
-.guard-enrollment .case-action-result { flex: 1 1 100%; margin: 0; }
-.guard-enrollment-result { flex: 1 1 100%; padding-top: 3px; }
-.guard-enrollment-result label { display: block; margin-bottom: 5px; color: #617b6d; font-size: 8px; font-weight: 700; }
-.guard-enrollment-result input { width: 100%; min-height: 32px; padding: 7px 9px; border: 1px solid #c9ddd0; border-radius: 6px; background: #fff; color: #426654; font: 9px/1.5 'DM Sans', sans-serif; }
-.guard-enrollment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 6px; }
+.integrity-queue-badge { display: inline-block; width: fit-content; margin-top: 7px; padding: 4px 7px; border: 1px solid #d5dedc; border-radius: 5px; background: #f3f6f5; color: #5e7470; font: 700 8px/1.4 'DM Sans', sans-serif; }
+.integrity-queue-badge.integrity-pending, .integrity-queue-badge.integrity-review-required, .integrity-queue-badge.integrity-dismissed { border-color: #dfcbb0; background: #fff7e9; color: #856338; }
+.integrity-queue-badge.integrity-clear, .integrity-queue-badge.integrity-accepted { border-color: #c6ddce; background: #eff8f2; color: #416f52; }
+.integrity-panel, .caller-audio { margin-top: 12px; padding: 12px; border: 1px solid #dce6e0; border-radius: 8px; background: #f7faf8; }
+.integrity-panel.integrity-pending, .integrity-panel.integrity-review-required, .integrity-panel.integrity-dismissed { border-color: #e4cdaa; background: #fffaf0; }
+.integrity-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.integrity-heading > .integrity-queue-badge { margin-top: 0; flex-shrink: 0; }
+.integrity-panel h3, .caller-audio h3 { margin: 5px 0 0; color: #435d53; font: 700 12px/1.4 'Manrope', sans-serif; }
+.integrity-panel > p, .caller-audio > p { margin: 7px 0 0; color: #657b70; font-size: 9px; line-height: 1.65; overflow-wrap: anywhere; }
+.integrity-panel > .integrity-reason { padding: 8px; border-left: 2px solid #cdb58a; background: #fff; color: #6b624e; }
+.integrity-panel > .integrity-meta, .integrity-panel > .integrity-note, .caller-audio > #caseAudioMeta { color: #829083; font-size: 8px; }
+.integrity-panel > .integrity-hold-note { font-weight: 700; color: #8c6a37; }
+.integrity-signals { margin: 8px 0; padding-left: 17px; color: #6f674f; font-size: 9px; line-height: 1.65; overflow-wrap: anywhere; }
+.integrity-signals:empty { display: none; }
+.integrity-signals li + li { margin-top: 6px; }
+.integrity-signals span { display: block; color: #88917e; font-size: 8px; }
+.integrity-panel form { margin-top: 11px; padding-top: 10px; border-top: 1px solid #e5e5d8; }
+.integrity-panel label { display: block; margin-bottom: 6px; color: #65765d; font-size: 9px; font-weight: 700; }
+.integrity-panel textarea { width: 100%; min-height: 60px; padding: 8px; border: 1px solid #d9dfce; border-radius: 6px; resize: vertical; color: #4b6654; background: #fff; font: 9px/1.6 'DM Sans', sans-serif; }
+.integrity-actions, .caller-audio-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 8px; }
+.integrity-actions .button, .caller-audio-actions .button { min-height: 31px; font-size: 9px; }
+.caller-audio audio { display: block; width: 100%; height: 34px; margin-top: 10px; }
+.caller-audio audio[hidden] { display: none; }
 
 /* A continuing case keeps its report progression visible across phone calls. */
 .case-update-summary { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: 11px; padding: 9px 10px; border: 1px solid #e0e9e3; border-radius: 7px; background: #f8fbf9; }

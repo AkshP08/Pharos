@@ -21,12 +21,17 @@ function caseRecord(id, overrides = {}) {
     zoneId: 'west', zoneName: 'West', locationText: 'West pickup point', locationStatus: 'matched',
     status: 'new', priority: 'urgent', priorityRank: 2, priorityReason: 'Caller reported needing transport.',
     createdAt: '2026-11-08T07:00:00Z', updatedAt: '2026-11-08T07:00:00Z',
-    assignedTo: null, followUpOwner: null, eligibleResponders: ['responder-one'], history: [], ...overrides,
+    assignedTo: null, followUpOwner: null, eligibleResponders: ['responder-one'], history: [],
+    integrityReview: { status: 'clear', version: 1, sourceCallId: `call-${id}`, sourceSequence: 1, analysisStatus: 'complete', basis: 'content', reason: 'No supported integrity concern.', signals: [], updatedAt: '2026-11-08T07:00:00Z' }, ...overrides,
   };
 }
 function responder(id = 'responder-one', overrides = {}) {
   return { id, name: 'Test Responder', organization: 'Test Team', synthetic: true, approved: true, available: true, capacity: 4, assignedCount: 0, capabilities: ['general', 'transport'], serviceAreas: ['west'], ...overrides };
 }
+function integrityReview(status, overrides = {}) {
+  return { status, version: 7, sourceCallId: 'reviewed-call', sourceSequence: 4, analysisStatus: 'complete', basis: 'content', reason: 'Repeated threats and a request for a payment code require verification.', signals: [{ label: 'Risky request', evidence: 'Give me the payment code', explanation: 'A code can transfer value before independent verification.' }], updatedAt: '2026-11-08T07:50:00Z', ...overrides };
+}
+const audioMetadata = { available: true, callId: 'recorded-call', durationSeconds: 20, expiresAt: '2026-11-09T08:00:00Z' };
 function snapshot(cases = [caseRecord('case-one')], overrides = {}) {
   return { mode: 'secured', role: 'coordinator', incidents: [], zones: [{ id: 'west', name: 'West' }, { id: 'east', name: 'East' }], responders: [responder()], cases, calls: [], scamReviews: [], alerts: [], ...overrides };
 }
@@ -40,6 +45,8 @@ async function beacon(data = snapshot()) {
   const selectedAreas = new Set();
   const selectedCapabilities = new Set();
   const actions = new Map();
+  const audioUrls = [];
+  const revokedAudioUrls = [];
   let now = initialTime;
   let checkedWrites = 0;
   const backend = { data: clone(data), authenticated: true, overview: null };
@@ -62,7 +69,10 @@ async function beacon(data = snapshot()) {
       set href(value) { attributes.set('href', String(value)); },
       addEventListener(event, callback) { const listeners = this.listeners.get(event) || []; listeners.push(callback); this.listeners.set(event, listeners); },
       append(child) { this.children.push(child); },
-      focus() {}, scrollIntoView() {}, reset() {},
+      focus() {}, scrollIntoView() {}, reset() {}, pauseCount: 0, loadCount: 0,
+      pause() { ++this.pauseCount; }, load() { ++this.loadCount; },
+      get src() { return attributes.get('src') || ''; },
+      set src(value) { attributes.set('src', String(value)); },
       get innerHTML() { return markup; },
       set innerHTML(value) { markup = String(value); text = markup.replace(/<[^>]*>/g, ''); this.children = []; if (selector === '#responderAreaOptions') ++checkedWrites; },
       get textContent() { return text + this.children.map(child => child.textContent).join(''); },
@@ -90,7 +100,11 @@ async function beacon(data = snapshot()) {
     createElement: tag => element(tag),
   };
   const sandbox = {
-    document, Headers, Date: Clock, URL, console,
+    document, Headers, Date: Clock, console,
+    URL: class extends URL {
+      static createObjectURL(blob) { assert.ok(blob instanceof Blob); const url = `blob:https://beacon.example.invalid/audio-${audioUrls.length + 1}`; audioUrls.push(url); return url; }
+      static revokeObjectURL(url) { revokedAudioUrls.push(url); }
+    },
     window: { location: { href: 'https://beacon.example.invalid/', origin: 'https://beacon.example.invalid' }, clearTimeout() {}, setTimeout() { return 1; }, setInterval(callback) { intervals.push(callback); return intervals.length; } },
     navigator: { clipboard: { writeText: async () => {} } },
     fetch: async (path, init = {}) => {
@@ -107,7 +121,7 @@ async function beacon(data = snapshot()) {
         result = await action(request);
       }
       const status = result?.httpStatus || 200;
-      return { ok: status >= 200 && status < 300, status, json: async () => clone(result?.httpStatus ? result.body : result) };
+      return { ok: status >= 200 && status < 300, status, json: async () => clone(result?.httpStatus ? result.body : result), blob: async () => result.audioBlob || new Blob(['fictional-WAV'], { type: 'audio/wav' }) };
     },
   };
   const context = vm.createContext(sandbox);
@@ -118,7 +132,7 @@ async function beacon(data = snapshot()) {
     for (const listener of target.listeners.get(type) || []) await listener(event);
   }
   return {
-    node, nodes, requests, backend, actions, selectedAreas,
+    node, nodes, requests, backend, actions, selectedAreas, audioUrls, revokedAudioUrls,
     get checkedWrites() { return checkedWrites; },
     get now() { return now; },
     advance(minutes) { now += minutes * 60_000; },
@@ -429,13 +443,13 @@ test('untrusted case/history/call/pressure/responder values are escaped in rende
   assert.match(page.node('#liveWarningList').innerHTML, /Provider accepted; phone display unconfirmed/);
 });
 
-test('logout erases cached records, displayed PII, private links, and typed private drafts', async () => {
+test('logout erases cached records, displayed PII, evidence, and typed private drafts', async () => {
   const marker = 'PRIVATE-FICTIONAL-RESIDENT-MARKER';
   const page = await beacon(snapshot([caseRecord('private', { transcript: marker, title: marker, history: [{ kind: 'initial', summary: marker, at: '2026-11-08T07:00:00Z' }] })], {
     calls: [{ id: 'private-call', transcript: marker, startedAt: '2026-11-08T07:00:00Z', status: 'completed', consent: 'yes' }],
     alerts: [{ id: 'private-alert', callId: 'private-call', text: marker, headline: marker, level: 'high', createdAt: '2026-11-08T07:00:00Z', signals: [{ label: 'Pressure', evidence: marker }], nextStep: marker }],
   }));
-  for (const selector of ['#transcriptInput', '#messageInput', '#guideInput', '#priorityOverrideReason', '#guardEnrollmentUrl']) page.node(selector).value = marker;
+  for (const selector of ['#transcriptInput', '#messageInput', '#guideInput', '#priorityOverrideReason', '#integrityDecisionReason']) page.node(selector).value = marker;
   page.actions.set('POST /api/scam/analyze', request => {
     assert.deepEqual(request.body, { text: marker, synthetic: true });
     const review = { id: 'private-message-review', text: marker, headline: marker, level: 'high', signals: [{ label: 'Pressure', evidence: marker }], nextStep: marker };
@@ -444,15 +458,12 @@ test('logout erases cached records, displayed PII, private links, and typed priv
   });
   await page.click('#analyzeButton');
   page.run(`askGuide('Explain the selected case priority')`);
-  page.node('#guardEnrollmentOpen').setAttribute('href', `https://example.invalid/guard.html#${marker}`);
   assert.ok(page.allDom().includes(marker));
   await page.click('#signOutButton');
   assert.equal(page.run('appData.cases.length + appData.calls.length + appData.alerts.length'), 0);
   assert.equal(page.run('selectedCaseId'), null);
   assert.equal(page.node('#beaconView').hidden, true);
   assert.equal(page.node('#guidePanel').hidden, true);
-  assert.equal(page.node('#guardEnrollmentOpen').getAttribute('href'), null);
-  assert.equal(page.node('#guardEnrollmentUrl').value, '');
   const retained = [...page.nodes].filter(([, element]) => [element.innerHTML, element.textContent, element.value].some(value => value.includes(marker))).map(([selector]) => selector);
   assert.deepEqual(retained, [], 'locking must erase sensitive DOM and drafts, not just hide the workspace');
 });
@@ -473,19 +484,206 @@ test('logout invalidates an in-flight overview before its private records can re
   assert.ok(!page.allDom().includes(marker));
 });
 
-test('a private enrollment response arriving after logout cannot restore a setup link', async () => {
-  const page = await beacon();
-  const delayed = deferred();
-  page.actions.set('POST /api/guard/enrollment', () => delayed.promise);
-  const pending = page.click('#guardEnrollmentButton');
-  await settle();
-  await page.click('#signOutButton');
-  const privateToken = 'FICTIONAL-LATE-ENROLLMENT-TOKEN';
-  delayed.resolve({ warningUrl: `/guard.html#${privateToken}`, expiresAt: '2026-11-09T08:00:00Z' });
+test('Beacon no longer offers resident Guard enrollment or a notification setup flow', () => {
+  assert.doesNotMatch(html, /guardEnrollment|Enroll a test phone|add it to the Home Screen/i);
+  assert.doesNotMatch(source, /\/api\/guard\/enrollment/);
+});
+
+test('integrity badges keep every case in urgency order with danger and area intact', async () => {
+  const page = await beacon(snapshot([
+    caseRecord('dismissed-immediate', { priority: 'immediate', priorityRank: 0, immediateDanger: 'yes', integrityReview: integrityReview('dismissed'), createdAt: '2026-11-08T06:00:00Z' }),
+    caseRecord('clear-urgent'),
+    caseRecord('flagged-immediate', { priority: 'immediate', priorityRank: 0, immediateDanger: 'yes', integrityReview: integrityReview('review-required'), createdAt: '2026-11-08T07:00:00Z' }),
+    caseRecord('pending-followup', { priority: 'follow-up', priorityRank: 3, integrityReview: integrityReview('pending') }),
+  ]));
+  const queue = page.node('#queueList').innerHTML;
+  const idsInOrder = [...queue.matchAll(/data-case-id="([^"]+)"/g)].map(match => match[1]);
+  assert.deepEqual(idsInOrder, ['dismissed-immediate', 'flagged-immediate', 'clear-urgent', 'pending-followup']);
+  for (const label of ['Human dismissed · retained', 'Human review required', 'No supported concern', 'Review pending']) assert.ok(queue.includes(label), label);
+  assert.equal(page.node('#priorityLabel').textContent, 'Immediate life-safety');
+  assert.match(page.node('.reported-chip-row').textContent, /Caller reported immediate danger/);
+  assert.match(page.node('#caseLocation').textContent, /West/);
+  assert.equal(page.node('#scamCount').textContent, '03');
+  assert.equal(page.node('#allTabCount').textContent, '4');
+  assert.equal(page.node('#followupList').hidden, true, 'follow-up urgency stays in the same ranked list');
+  assert.match(page.node('#integritySummary').textContent, /case, reported urgency, history/);
+  assert.match(page.node('#liveWarningList').innerHTML, /Responder intake review/);
+  assert.match(page.node('#traceSignalList').innerHTML, /Give me the payment code/, 'case integrity evidence reaches Pressure Trace without a resident notification alert');
+  assert.doesNotMatch(page.allDom(), /proven scammer/i);
+});
+
+test('held and unavailable reports allow verification ownership but block response claim and ETA', async () => {
+  for (const status of ['pending', 'review-required', 'dismissed']) {
+    const record = caseRecord(`held-${status}`, { assignedTo: 'responder-one', status: 'claimed', integrityReview: integrityReview(status, { analysisStatus: 'unavailable', basis: 'unavailable' }), responseProgress: { state: 'en-route', responderId: 'responder-one', etaAt: '2026-11-08T08:15:00Z', updatedAt: '2026-11-08T07:59:00Z' } });
+    const page = await beacon(snapshot([record]));
+    assert.equal(page.node('#assignButton').textContent, 'Assign verification owner');
+    assert.equal(page.node('#responseProgressForm').hidden, true);
+    assert.equal(page.node('#responseProgressEta').hidden, true);
+    assert.match(page.node('#responseProgressTitle').textContent, /Human acceptance required/);
+    assert.match(page.node('#integrityMeta').textContent, /unavailable/);
+    page.node('#responseProgressState').value = 'en-route';
+    page.node('#responseEtaMinutes').value = '10';
+    await page.submit('#responseProgressForm');
+    assert.ok(!page.requests.some(request => request.path.endsWith('/progress')));
+    page.actions.set(`POST /api/cases/${record.id}/followup-owner`, request => {
+      assert.deepEqual(request.body, { responderId: 'responder-one' });
+      page.backend.data.cases[0].followUpOwner = 'responder-one';
+      return { caseRecord: page.backend.data.cases[0] };
+    });
+    page.node('#responderSelect').value = 'responder-one';
+    await page.click('#assignButton');
+    assert.ok(!page.requests.some(request => request.path.endsWith('/claim')));
+    assert.match(page.node('#caseOwner').textContent, /Verification owner/);
+    assert.match(page.node('#caseOwner').textContent, /Response owner/, 'late concerns do not silently cancel existing response ownership');
+  }
+});
+
+test('human decisions require reasons and submit the exact call/sequence/version evidence scope', async () => {
+  const page = await beacon(snapshot([caseRecord('review', { priority: 'immediate', priorityRank: 0, integrityReview: integrityReview('review-required') })]));
+  const reviewPath = 'POST /api/cases/review/integrity-review';
+  page.node('#integrityDecisionReason').value = 'short';
+  await page.click('#integrityAcceptButton');
+  assert.match(page.node('#integrityReviewResult').textContent, /between 8 and 1,000/);
+  page.node('#integrityDecisionReason').value = 'x'.repeat(1001);
+  await page.click('#integrityDismissButton');
+  assert.equal(page.requests.filter(request => request.path.endsWith('/integrity-review')).length, 0);
+  const gate = deferred();
+  const reason = 'Verified the help request with the duty coordinator.';
+  page.actions.set(reviewPath, async request => {
+    assert.deepEqual(request.body, { decision: 'accept', reason, expectedVersion: 7, expectedSourceCallId: 'reviewed-call', expectedSequence: 4 });
+    await gate.promise;
+    page.backend.data.cases[0].integrityReview = integrityReview('accepted', { version: 8, decision: { action: 'accept', reason, at: '2026-11-08T08:00:00Z' } });
+    return { caseRecord: page.backend.data.cases[0] };
+  });
+  page.node('#integrityDecisionReason').value = reason;
+  const pending = page.click('#integrityAcceptButton');
+  assert.equal(page.node('#integrityAcceptButton').disabled, true);
+  assert.equal(page.node('#assignButton').textContent, 'Assign verification owner', 'no optimistic acceptance');
+  gate.resolve();
   await pending;
-  assert.equal(page.node('#guardEnrollmentUrl').value, '');
-  assert.equal(page.node('#guardEnrollmentOpen').getAttribute('href'), null);
-  assert.equal(page.node('#guardEnrollmentResult').hidden, true);
-  assert.equal(page.node('#beaconView').hidden, true);
-  assert.ok(!page.allDom().includes(privateToken));
+  assert.equal(page.node('#integrityBadge').textContent, 'Human accepted');
+  assert.equal(page.node('#assignButton').textContent, 'Claim for responder →');
+  assert.equal(page.node('#priorityLabel').textContent, 'Immediate life-safety');
+  assert.match(page.node('#integrityDecisionAudit').textContent, new RegExp(reason));
+  page.actions.set(reviewPath, request => {
+    assert.deepEqual(request.body, { decision: 'dismiss', reason: 'Could not verify the reported pickup request.', expectedVersion: 8, expectedSourceCallId: 'reviewed-call', expectedSequence: 4 });
+    page.backend.data.cases[0].integrityReview = integrityReview('dismissed', { version: 9 });
+    return { caseRecord: page.backend.data.cases[0] };
+  });
+  page.node('#integrityDecisionReason').value = 'Could not verify the reported pickup request.';
+  await page.click('#integrityDismissButton');
+  assert.equal(page.node('#allTabCount').textContent, '1');
+  assert.match(page.node('#queueList').innerHTML, /Human dismissed · retained/);
+  assert.equal(page.node('#priorityLabel').textContent, 'Immediate life-safety');
+  assert.equal(page.node('#assignButton').textContent, 'Assign verification owner');
+});
+
+test('review polling preserves drafts only for the same evidence scope and failed decisions never clear a hold', async () => {
+  const page = await beacon(snapshot([caseRecord('scope', { integrityReview: integrityReview('review-required', { evidenceCallId: 'older-call', evidenceSequence: 2 }) })]));
+  assert.match(page.node('#integrityMeta').textContent, /retained concern from earlier call older-call, sequence 2/);
+  page.node('#integrityDecisionReason').value = 'Checking this exact evidence scope.';
+  await page.poll();
+  assert.equal(page.node('#integrityDecisionReason').value, 'Checking this exact evidence scope.');
+  page.backend.data.cases[0].integrityReview.sourceSequence = 5;
+  await page.poll();
+  assert.equal(page.node('#integrityDecisionReason').value, '');
+  assert.match(page.node('#integrityReviewResult').textContent, /snapshot changed/);
+  page.actions.set('POST /api/cases/scope/integrity-review', () => ({ httpStatus: 409, body: { error: 'A newer caller update needs review.' } }));
+  page.node('#integrityDecisionReason').value = 'A meaningful reason for the current report.';
+  await page.submit('#integrityReviewForm');
+  assert.match(page.node('#integrityReviewResult').textContent, /newest evidence/);
+  assert.equal(page.node('#integrityBadge').textContent, 'Human review required');
+  assert.equal(page.node('#assignButton').textContent, 'Assign verification owner');
+  assert.match(page.run("groundedGuideAnswer('Explain this integrity hold')"), /A human must accept/);
+});
+
+test('private caller audio is manual, uses authenticated bytes, and revokes on case change and logout', async () => {
+  assert.match(html, /<audio[^>]+controls preload="none"[^>]*>/);
+  assert.doesNotMatch(html, /<audio[^>]+autoplay/);
+  const page = await beacon(snapshot([
+    caseRecord('audio-one', { audio: audioMetadata, integrityReview: integrityReview('review-required') }),
+    caseRecord('audio-two', { zoneId: 'east', zoneName: 'East', audio: { ...audioMetadata, callId: 'second-recording' } }),
+  ]));
+  await page.poll();
+  assert.ok(!page.requests.some(request => request.path.endsWith('/audio')), 'selecting and polling never loads bytes');
+  page.actions.set('GET /api/cases/audio-one/audio', () => ({ audioBlob: new Blob(['first fictional WAV'], { type: 'audio/wav' }) }));
+  await page.click('#caseAudioLoadButton');
+  assert.equal(page.audioUrls.length, 1);
+  assert.equal(page.node('#caseAudioPlayer').src, page.audioUrls[0]);
+  assert.equal(page.node('#caseAudioPlayer').hidden, false);
+  assert.match(page.node('#caseAudioStatus').textContent, /Press Play/);
+  assert.match(page.node('#caseAudioMeta').textContent, /recorded-call/);
+  page.node('#zoneFilter').value = 'east';
+  await page.change('#zoneFilter');
+  assert.deepEqual(page.revokedAudioUrls, [page.audioUrls[0]]);
+  assert.equal(page.node('#caseAudioPlayer').src, '');
+  assert.equal(page.node('#caseAudioPlayer').hidden, true);
+  page.actions.set('GET /api/cases/audio-two/audio', () => ({}));
+  await page.click('#caseAudioLoadButton');
+  await page.click('#signOutButton');
+  assert.deepEqual(page.revokedAudioUrls, page.audioUrls);
+  assert.equal(page.node('#caseAudioPlayer').src, '');
+  assert.equal(page.node('#caseAudioPanel').hidden, true);
+  const audioRequests = page.requests.filter(request => request.path.endsWith('/audio'));
+  assert.ok(audioRequests.every(request => request.credentials === 'same-origin' && request.cache === 'no-store'));
+  assert.ok(page.node('#caseAudioPlayer').pauseCount >= 2);
+});
+
+test('late caller audio fetch/blob resolution cannot restore bytes after logout or a case change', async () => {
+  for (const stage of ['response-logout', 'blob-logout', 'response-case-change']) {
+    const page = await beacon(snapshot([
+      caseRecord('private-audio', { audio: audioMetadata }),
+      caseRecord('different-case', { zoneId: 'east', zoneName: 'East' }),
+    ]));
+    const gate = deferred();
+    page.actions.set('GET /api/cases/private-audio/audio', () => stage === 'blob-logout' ? { audioBlob: gate.promise } : gate.promise);
+    const pending = page.click('#caseAudioLoadButton');
+    await settle();
+    if (stage.endsWith('case-change')) { page.node('#zoneFilter').value = 'east'; await page.change('#zoneFilter'); }
+    else await page.click('#signOutButton');
+    gate.resolve(stage === 'blob-logout' ? new Blob(['late fictional WAV'], { type: 'audio/wav' }) : {});
+    await pending;
+    assert.equal(page.audioUrls.length, 0, stage);
+    assert.equal(page.node('#caseAudioPlayer').src, '', stage);
+    assert.equal(page.node('#caseAudioPlayer').hidden, true, stage);
+    assert.equal(page.run('audioObjectUrl'), '', stage);
+  }
+});
+
+test('missing and unavailable audio are neutral and an expired recording never loads', async () => {
+  const page = await beacon(snapshot([caseRecord('no-audio', { audio: { available: false }, integrityReview: integrityReview('pending', { analysisStatus: 'unavailable' }) })]));
+  assert.match(page.node('#caseAudioMeta').textContent, /missing audio is not a negative signal/);
+  assert.equal(page.node('#caseAudioLoadButton').hidden, true);
+  Object.assign(page.backend.data.cases[0], { audio: audioMetadata });
+  await page.poll();
+  page.actions.set('GET /api/cases/no-audio/audio', () => ({ httpStatus: 404, body: {} }));
+  await page.click('#caseAudioLoadButton');
+  assert.match(page.node('#caseAudioStatus').textContent, /missing audio does not count against/);
+  assert.equal(page.run('appData.cases[0].priority'), 'urgent');
+  page.backend.data.cases[0].audio.expiresAt = '2026-11-08T07:00:00Z';
+  await page.poll();
+  assert.equal(page.node('#caseAudioLoadButton').hidden, true);
+  const requestsBefore = page.requests.length;
+  await page.click('#caseAudioLoadButton');
+  assert.equal(page.requests.length, requestsBefore);
+});
+
+test('expired or withdrawn metadata cannot resurrect an in-flight caller recording', async () => {
+  for (const change of ['expired-during-load', 'withdrawn', 'new-call']) {
+    const page = await beacon(snapshot([caseRecord('audio', { audio: { ...audioMetadata, expiresAt: '2026-11-08T08:01:00Z' } })]));
+    const gate = deferred();
+    page.actions.set('GET /api/cases/audio/audio', () => ({ audioBlob: gate.promise }));
+    const pending = page.click('#caseAudioLoadButton');
+    await settle();
+    if (change === 'expired-during-load') page.advance(2);
+    else {
+      if (change === 'withdrawn') page.backend.data.cases[0].audio.available = false;
+      else page.backend.data.cases[0].audio.callId = 'newer-call';
+      await page.poll();
+    }
+    gate.resolve(new Blob(['stale fictional recording'], { type: 'audio/wav' }));
+    await pending;
+    assert.equal(page.audioUrls.length, 0, change);
+    assert.equal(page.node('#caseAudioPlayer').src, '', change);
+  }
 });

@@ -56,7 +56,7 @@ function ingest(mf, event, callId, payload = {}) {
 }
 
 async function start(mf, callId, purpose = 'intake') {
-  const started = await ingest(mf, 'call.started', callId, { purpose });
+  const started = await ingest(mf, 'call.started', callId, { purpose, analysisMode: purpose === 'intake' ? 'semantic' : 'rules' });
   assert.equal(started.status, 202, JSON.stringify(started.data));
   const consent = await ingest(mf, 'consent', callId, { consent: true });
   assert.equal(consent.status, 200, JSON.stringify(consent.data));
@@ -94,8 +94,30 @@ async function addResponder(mf, cookie, coordinatorCookie, overrides = {}) {
   return responder;
 }
 
+async function acceptForWorkflow(mf, id, cookie) {
+  const current = await command(mf, { action: 'case.get', id });
+  assert.equal(current.status, 200);
+  const review = current.data.caseRecord.integrityReview;
+  const result = await request(mf, `/api/cases/${id}/integrity-review`, { cookie, body: {
+    decision: 'accept', reason: 'Fictional desk verified the current report for the lifecycle workflow.',
+    expectedVersion: review.version, expectedSourceCallId: review.sourceCallId, expectedSequence: review.sourceSequence,
+  } });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.equal(result.data.caseRecord.integrityReview.status, 'accepted');
+}
+
 const help = 'We need rescue near Riverbend, Zone 3. Water is rising inside and we cannot get out.';
 const guardedRisk = 'I am the county relief office. Send a gift card fee within five minutes and do not call anyone else.';
+const intakeConcern = `${help} Send me gift cards within five minutes.`;
+async function assessIntakeConcern(mf, callId) {
+  const result = await ingest(mf, 'pressure.review', callId, { sequence: 0, review: {
+    shouldWarn: true, level: 'medium', uncertain: false,
+    signals: [{ kind: 'money_or_secret', evidence: 'gift cards' }, { kind: 'deadline', evidence: 'within five minutes' }],
+  } });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.equal(result.data.warning, null, 'A contextual intake concern never sends a resident warning');
+  return result;
+}
 
 test('voice events require consent, preserve retries, and reject gaps/conflicts without losing a partial case', async (t) => {
   const mf = runtime(t);
@@ -134,21 +156,29 @@ test('voice events require consent, preserve retries, and reject gaps/conflicts 
   assert.equal(data.cases.filter(item => item.callId === callId).length, 1);
 });
 
-test('concurrent duplicate transcript retries produce one case and one warning', async (t) => {
+test('concurrent duplicate intake retries produce one retained case and one contextual assessment', async (t) => {
   const mf = runtime(t);
   await start(mf, 'parallel-retry');
-  const payload = { role: 'caller', text: `${help} Someone asked me to send gift cards within five minutes.`, sequence: 0 };
+  const payload = { role: 'caller', text: intakeConcern, sequence: 0 };
   const results = await Promise.all([
     ingest(mf, 'turn', 'parallel-retry', payload),
     ingest(mf, 'turn', 'parallel-retry', payload),
   ]);
   assert.ok(results.every(item => item.status === 202));
-  assert.equal(results.filter(item => item.data.warning).length, 1);
+  assert.ok(results.every(item => item.data.warning === null));
   assert.equal(new Set(results.map(item => item.data.caseId)).size, 1);
+  const before = (await command(mf, { action: 'case.get', id: results[0].data.caseId })).data.caseRecord;
+  const reviews = await Promise.all([assessIntakeConcern(mf, 'parallel-retry'), assessIntakeConcern(mf, 'parallel-retry')]);
+  assert.equal(reviews.filter(item => item.data.duplicate).length, 1);
   const data = await overview(mf, await login(mf));
   assert.equal(data.calls.find(item => item.id === 'parallel-retry').turns.length, 1);
   assert.equal(data.cases.filter(item => item.callId === 'parallel-retry').length, 1);
-  assert.equal(data.alerts.filter(item => item.callId === 'parallel-retry').length, 1);
+  assert.equal(data.alerts.filter(item => item.callId === 'parallel-retry').length, 0);
+  const after = data.cases.find(item => item.id === results[0].data.caseId);
+  assert.equal(after.integrityReview.version, before.integrityReview.version + 1);
+  assert.equal(after.integrityReview.status, 'review-required');
+  assert.equal(after.integrityReview.signals.length, 2);
+  assert.equal(after.priority, 'immediate', 'The concern must not demote reported danger');
 });
 
 test('guarded speech warns during the call, escalates once, and never creates a help case', async (t) => {
@@ -198,9 +228,12 @@ test('consent withdrawal scrubs retained speech and safely acknowledges revoke/e
   const mf = runtime(t);
   const callId = 'withdrawal-lifecycle';
   const started = await start(mf, callId);
-  const turn = await ingest(mf, 'turn', callId, { role: 'caller', text: `${help} Someone demanded gift cards within five minutes.`, sequence: 0 });
+  const turn = await ingest(mf, 'turn', callId, { role: 'caller', text: intakeConcern, sequence: 0 });
   assert.ok(turn.data.caseId);
-  assert.ok(turn.data.warning);
+  assert.equal(turn.data.warning, null);
+  await assessIntakeConcern(mf, callId);
+  const before = (await command(mf, { action: 'case.get', id: turn.data.caseId })).data.caseRecord;
+  assert.equal(before.integrityReview.signals.length, 2, 'The fixture must contain actual quoted evidence before withdrawal');
   assert.equal((await ingest(mf, 'consent.revoked', callId)).status, 200);
   assert.equal((await ingest(mf, 'consent.revoked', callId)).data.duplicate, true);
   assert.equal((await ingest(mf, 'call.ended', callId)).data.duplicate, true);
@@ -214,6 +247,9 @@ test('consent withdrawal scrubs retained speech and safely acknowledges revoke/e
   assert.match(call.transcript, /withdrawn/i);
   assert.deepEqual(caseRecord.turns, []);
   assert.deepEqual(caseRecord.scamSignals, []);
+  assert.deepEqual(caseRecord.integrityReview.signals, []);
+  assert.equal(caseRecord.integrityReview.status, 'review-required');
+  assert.ok(!JSON.stringify(caseRecord).includes('gift cards'));
   assert.equal(caseRecord.followUp, true);
   assert.equal(data.alerts.some(item => item.callId === callId), false);
   assert.equal(data.scamReviews.some(item => item.sourceId === callId), false);
@@ -229,6 +265,7 @@ test('human priority survives later speech and an owner outside corrected covera
   const first = await ingest(mf, 'turn', callId, { role: 'caller', text: 'We need a ride. We are safe in Riverbend, Zone 3.', sequence: 0 });
   const path = `/api/cases/${first.data.caseId}`;
   assert.equal((await request(mf, `${path}/priority`, { cookie, body: { priority: 'immediate', reason: 'Human confirmed a new time-critical concern' } })).status, 200);
+  await acceptForWorkflow(mf, first.data.caseId, cookie);
   assert.equal((await request(mf, `${path}/claim`, { cookie, body: { responderId: responder.id } })).status, 200);
   await ingest(mf, 'turn', callId, { role: 'caller', text: 'Actually, my location is Northbank, Zone 2.', sequence: 1 });
   const record = (await overview(mf, cookie)).cases.find(item => item.id === first.data.caseId);
@@ -252,6 +289,7 @@ test('unassigned location gets an accountable follow-up owner and transfer/dispa
   const path = `/api/cases/${first.data.caseId}`;
   let data = await overview(mf, cookie);
   assert.equal(data.cases.find(item => item.id === first.data.caseId).zoneId, null);
+  await acceptForWorkflow(mf, first.data.caseId, cookie);
   assert.equal((await request(mf, `${path}/claim`, { cookie, body: { responderId: firstOwner.id } })).status, 403);
   const owned = await request(mf, `${path}/followup-owner`, { cookie, body: { responderId: firstOwner.id } });
   assert.equal(owned.status, 200, JSON.stringify(owned.data));
@@ -306,9 +344,12 @@ test('retention expiry removes evidence from calls, cases, reviews, and warnings
   const mf = runtime(t);
   const callId = 'retention-lifecycle';
   const started = await start(mf, callId);
-  const created = await ingest(mf, 'turn', callId, { role: 'caller', text: `${help} Someone demanded gift cards within five minutes.`, sequence: 0 });
+  const created = await ingest(mf, 'turn', callId, { role: 'caller', text: intakeConcern, sequence: 0 });
   assert.ok(created.data.caseId);
-  assert.ok(created.data.warning);
+  assert.equal(created.data.warning, null);
+  await assessIntakeConcern(mf, callId);
+  const before = (await overview(mf, await login(mf))).cases.find(item => item.id === created.data.caseId);
+  assert.equal(before.integrityReview.signals.length, 2, 'Retention must remove real retained evidence, not pass on an empty fixture');
   assert.equal((await ingest(mf, 'call.ended', callId)).status, 200);
   const prune = await command(mf, { action: 'transcripts.prune', cutoff: Date.now() + 1000 });
   assert.equal(prune.status, 200);
@@ -320,6 +361,8 @@ test('retention expiry removes evidence from calls, cases, reviews, and warnings
   assert.match(call.transcript, /expired/i);
   assert.ok(call.transcriptExpiredAt);
   assert.ok(record.scamSignals.every(signal => signal.evidence === '[expired]'));
+  assert.deepEqual(record.integrityReview.signals, []);
+  assert.equal(record.integrityReview.status, 'review-required');
   assert.ok(data.scamReviews.filter(item => item.sourceId === callId).every(item => item.signals.every(signal => signal.evidence === '[expired]')));
   assert.ok(data.alerts.filter(item => item.callId === callId).every(item => item.signals.every(signal => signal.evidence === '[expired]')));
   assert.equal((await request(mf, '/api/guard/status', { token: new URL(started.warningUrl).hash.slice(1) })).status, 404);

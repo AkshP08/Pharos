@@ -1,7 +1,8 @@
 import { DurableObject } from 'cloudflare:workers'
-import { analyzeCall, analyzeScamText, eligibleRespondersFor, makeSeedData, rankFor, transcriptText, type CallSession, type Incident, type PharosCase, type Priority, type Responder, type ResidentAlert, type ScamReview, type TranscriptTurn, type Zone } from './pharos-domain'
+import { analyzeCall, analyzeScamText, eligibleRespondersFor, integrityAllowsDispatch, makeSeedData, rankFor, transcriptText, type CallSession, type Incident, type IntegrityReview, type PharosCase, type Priority, type Responder, type ResidentAlert, type ScamReview, type TranscriptTurn, type Zone } from './pharos-domain'
 import { semanticAnalysis } from './pharos-semantic'
 import { CallerStore } from './pharos-callers'
+import { CallerAudioStore, type SealedAudioChunk } from './pharos-audio'
 
 type StoreCommand = {
   action: string
@@ -31,6 +32,7 @@ export class PharosStore extends DurableObject {
   private readonly sql: SqlStorage
   private readonly retentionMs: number
   private readonly callers: CallerStore
+  private readonly audio: CallerAudioStore
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env)
@@ -112,6 +114,7 @@ export class PharosStore extends DurableObject {
       );
     `)
     this.callers = new CallerStore(this.sql, this.retentionMs)
+    this.audio = new CallerAudioStore(this.sql, this.retentionMs)
   }
 
   private rows<T>(query: string, ...bindings: SqlStorageValue[]): T[] {
@@ -120,7 +123,110 @@ export class PharosStore extends DurableObject {
 
   private getCase(id: string): PharosCase | null {
     const row = this.rows<{ payload: string }>('SELECT payload FROM cases WHERE id = ?', id)[0]
-    return row ? decode<PharosCase>(row.payload) : null
+    return row ? this.decorateCase(decode<PharosCase>(row.payload)) : null
+  }
+
+  private latestCallerSequence(call: CallSession): number {
+    let sequence = call.turns.length - 1
+    while (sequence >= 0 && call.turns[sequence].role !== 'caller') sequence -= 1
+    return sequence
+  }
+
+  private initialIntegrity(item: PharosCase, call?: CallSession | null): IntegrityReview {
+    const at = item.updatedAt || item.createdAt || new Date().toISOString()
+    const syntheticConcern = item.synthetic && Boolean(item.scamLevel && item.scamLevel !== 'low' && item.scamSignals.length)
+    const syntheticClear = item.synthetic && !syntheticConcern
+    return {
+      status: syntheticClear ? 'clear' : 'review-required', version: 1,
+      sourceCallId: call?.id || item.callId || `case:${item.id}`, sourceSequence: call ? this.latestCallerSequence(call) : -1,
+      analysisStatus: syntheticClear || syntheticConcern ? 'completed' : 'unavailable',
+      basis: syntheticClear ? 'model-clear' : syntheticConcern ? 'content-signals' : 'analysis-unavailable',
+      reason: syntheticClear ? 'Known fictional fixture: no supported current request concern.' : syntheticConcern ? 'Fictional wording contains a request concern. Human verification is required.' : 'A completed contextual assessment is not available. Human verification is required.',
+      signals: syntheticConcern ? item.scamSignals : [], updatedAt: at,
+      ...(syntheticConcern ? { evidenceCallId: call?.id || item.callId || undefined, evidenceSequence: call ? this.latestCallerSequence(call) : -1 } : {}),
+    }
+  }
+
+  private decorateCase(item: PharosCase): PharosCase {
+    const call = item.callId ? this.getCall(item.callId) : null
+    item.integrityReview ||= this.initialIntegrity(item, call)
+    const selectedId = item.integrityReview.evidenceCallId || item.callId || ''
+    const audioCall = this.retainedAudioSource(item)
+    item.audio = { callId: selectedId, ...(audioCall ? this.audio.metadata(audioCall.id) : { available: false, durationSeconds: 0, expiresAt: null }) }
+    return item
+  }
+
+  private retainedAudioSource(item: PharosCase): CallSession | null {
+    if (item.integrityReview?.status === 'clear') return null
+    const selectedId = item.integrityReview?.evidenceCallId || item.callId
+    const call = selectedId ? this.getCall(selectedId) : null
+    return call && call.caseId === item.id && call.purpose !== 'guard' && call.consent === 'yes' && call.audioConsent === true
+      && !call.transcriptExpiredAt && Date.parse(call.startedAt) + this.retentionMs > Date.now() ? call : null
+  }
+
+  private invalidateTravel(item: PharosCase, at: string): void {
+    if (item.responseProgress && item.responseProgress.state !== 'review-needed') item.responseProgress = { ...item.responseProgress, state: 'review-needed', etaAt: null, updatedAt: at }
+  }
+
+  private pendingIntegrity(item: PharosCase, call: CallSession, previous?: IntegrityReview): IntegrityReview {
+    const sequence = this.latestCallerSequence(call)
+    if (previous?.sourceCallId === call.id && previous.sourceSequence === sequence) return previous
+    const sameCall = previous?.sourceCallId === call.id
+    const sticky = previous && ['review-required', 'dismissed'].includes(previous.status)
+    const reopenedDismissal = previous?.status === 'dismissed'
+    const accepted = sameCall && previous?.status === 'accepted'
+    const semantic = call.analysisMode === 'semantic'
+    return {
+      status: reopenedDismissal ? 'review-required' : sticky ? previous!.status : accepted ? 'accepted' : semantic ? 'pending' : 'review-required',
+      version: (previous?.version || 0) + 1, sourceCallId: call.id, sourceSequence: sequence,
+      analysisStatus: semantic ? 'pending' : 'unavailable',
+      basis: sticky || accepted ? previous!.basis : semantic ? 'analysis-pending' : 'analysis-unavailable',
+      reason: reopenedDismissal ? 'New caller information arrived after the prior dismissal. Human verification is required; reported danger remains visible.' : sticky || accepted ? previous!.reason : semantic ? 'Context review is pending. Reported danger remains visible for immediate human review.' : 'Context review is unavailable. Human verification is required; urgency remains based on the reported facts.',
+      signals: sticky || accepted ? previous!.signals : [], updatedAt: new Date().toISOString(),
+      ...(previous?.decision ? { decision: previous.decision } : {}),
+      ...(previous?.evidenceCallId ? { evidenceCallId: previous.evidenceCallId, evidenceSequence: previous.evidenceSequence } : {}),
+    }
+  }
+
+  private applyIntegrityAssessment(call: CallSession, input: { analysisStatus: 'completed' | 'unavailable'; concerning: boolean; uncertain?: boolean; signals?: PharosCase['scamSignals']; level?: ScamReview['level'] }): void {
+    if (call.purpose === 'guard' || !call.caseId) return
+    const item = this.getCase(call.caseId)
+    if (!item || item.callId !== call.id) return
+    const sequence = this.latestCallerSequence(call)
+    const current = item.integrityReview || this.initialIntegrity(item, call)
+    const acceptedScope = current.status === 'accepted' && current.decision?.action === 'accept'
+      && current.decision.sourceCallId === call.id && current.decision.sourceSequence >= sequence
+    const sticky = ['review-required', 'dismissed'].includes(current.status)
+    const requiresReview = input.concerning || input.uncertain || input.analysisStatus === 'unavailable'
+    const next: IntegrityReview = {
+      ...current, sourceCallId: call.id, sourceSequence: sequence, analysisStatus: input.analysisStatus,
+      status: acceptedScope ? 'accepted' : requiresReview ? 'review-required' : sticky ? current.status : current.status === 'accepted' ? 'accepted' : 'clear',
+      basis: acceptedScope ? 'human-decision' : requiresReview ? input.analysisStatus === 'unavailable' ? 'analysis-unavailable' : 'content-signals' : sticky || current.status === 'accepted' ? current.basis : 'model-clear',
+      reason: acceptedScope ? current.reason : requiresReview ? input.analysisStatus === 'unavailable' ? 'Context review was unavailable. A human must verify this request; reported danger remains highlighted.' : input.uncertain ? 'The contextual assessment is uncertain about a potential concerning request. Human verification is required; this is not proof of fabrication.' : 'Caller wording contains a supported request concern. Verify it before assignment; urgency and danger facts are unchanged.' : sticky || current.status === 'accepted' ? current.reason : 'No supported current request concern was identified. This is not proof that the caller or report is genuine.',
+      signals: input.concerning ? input.signals || [] : sticky || acceptedScope ? current.signals : [],
+      ...(input.concerning ? { evidenceCallId: call.id, evidenceSequence: sequence } : {}),
+    }
+    if (!input.concerning && !sticky && !acceptedScope && current.status !== 'accepted') {
+      delete next.evidenceCallId
+      delete next.evidenceSequence
+    }
+    const equal = JSON.stringify({ ...next, version: 0, updatedAt: '' }) === JSON.stringify({ ...current, version: 0, updatedAt: '' })
+    if (equal) return
+    next.version = current.version + 1
+    next.updatedAt = new Date().toISOString()
+    item.integrityReview = next
+    item.updatedAt = next.updatedAt
+    if (next.status === 'review-required') this.invalidateTravel(item, next.updatedAt)
+    if (input.concerning) {
+      item.scamSignals = input.signals || []
+      item.scamLevel = input.level || 'medium'
+    } else if (!sticky && !acceptedScope && !input.uncertain) {
+      item.scamSignals = []
+      item.scamLevel = null
+    }
+    this.putCase(item)
+    this.audit('case.integrity-assessed', { caseId: item.id, callId: call.id, sequence, status: next.status, analysisStatus: next.analysisStatus, version: next.version })
+    if (call.endedAt && next.status === 'clear') this.audio.revoke(call.id)
   }
 
   private getResponder(id: string): Responder | null {
@@ -150,6 +256,7 @@ export class PharosStore extends DurableObject {
     const item = call.caseId ? this.getCase(call.caseId) : null
     const base = { accepted: true, revision: `pending:${item?.id || call.id}`, state: 'pending', message: item ? 'Your request reached the response desk. An arrival time is not confirmed yet.' : 'Request details are still being collected. An arrival time is not confirmed.', announce: false }
     if (!item) return base
+    if (!integrityAllowsDispatch(item)) return { ...base, revision: `review:${item.id}:${item.integrityReview?.version || 0}`, state: 'review-needed', message: 'Your request reached the response desk for human verification. An arrival time is not confirmed yet.', announce: false }
     if (item.status === 'resolved') return { ...base, revision: `resolved:${item.updatedAt}`, state: 'resolved', message: 'The response desk marked this request resolved. Tell us if you still need help.', announce: true }
     const progress = item.responseProgress
     if (!progress) return base
@@ -178,7 +285,7 @@ export class PharosStore extends DurableObject {
     for (const prior of recentCalls) {
       if (prior.id === call.id || prior.callerRef !== call.callerRef || prior.consent !== 'yes' || prior.transcriptExpiredAt || !prior.endedAt || prior.purpose === 'guard' || !prior.caseId || prior.caseId === current?.id) continue
       const item = this.getCase(prior.caseId)
-      if (!item || item.synthetic || item.status === 'resolved' || item.incidentId !== candidate.incidentId || locationKey(item.locationText) !== key) continue
+      if (!item || item.synthetic || item.status === 'resolved' || item.integrityReview?.status === 'dismissed' || item.incidentId !== candidate.incidentId || locationKey(item.locationText) !== key) continue
       // Never let parallel callbacks replace an ongoing report.
       if (recentCalls.some(other => other.id !== call.id && other.caseId === item.id && !other.endedAt && other.consent !== 'no')) continue
       matches.set(item.id, item)
@@ -194,7 +301,7 @@ export class PharosStore extends DurableObject {
     let caseRecord: PharosCase | null = null
     if (call.purpose !== 'guard') {
       let previous = call.caseId ? this.getCase(call.caseId) : null
-      const analysis = analyzeCall({ callId: call.id, turns: call.turns, zones, responders, incidentId: zones[0]?.incidentId || 'incident-trinity', synthetic: call.synthetic, createdAt: call.startedAt })
+      const analysis = analyzeCall({ callId: call.id, turns: call.turns, zones, responders, incidentId: zones[0]?.incidentId || 'incident-trinity', synthetic: call.synthetic, createdAt: call.startedAt, preserveIntake: true })
       caseRecord = analysis.caseRecord
       if (caseRecord) {
         // An old source call may be finalized/retried after a newer snapshot.
@@ -207,6 +314,11 @@ export class PharosStore extends DurableObject {
           this.audit('case.repeat-linked', { caseId: repeat.id, callId: call.id, identityVerified: false })
         }
         caseRecord.id = call.caseId || `PH-${call.id}`
+        caseRecord.integrityReview = this.pendingIntegrity(caseRecord, call, previous?.integrityReview)
+        if (call.analysisMode === 'semantic') {
+          caseRecord.scamSignals = previous?.scamSignals || []
+          caseRecord.scamLevel = previous?.scamLevel || null
+        }
         caseRecord.latestPriority = caseRecord.priority
         if (call.transport === 'webrtc') {
           caseRecord.source = 'web'
@@ -288,6 +400,9 @@ export class PharosStore extends DurableObject {
       this.putScam(review)
       call.scamReviewId = review.id
     }
+    // Current product is responder-facing. Intake concerns are a case badge,
+    // never a resident warning, phone-reputation verdict, or auto-dismissal.
+    if (call.purpose !== 'guard') return null
     let warning: ResidentAlert | null = null
     if (pressure.shouldWarn) {
       const previous = this.rows<{ payload: string }>('SELECT payload FROM resident_alerts WHERE call_id = ?', call.id).map(row => decode<ResidentAlert>(row.payload)).filter(alert => alert.analysisSource !== 'caller-id-history')
@@ -307,8 +422,8 @@ export class PharosStore extends DurableObject {
     let call = this.getCall(id)
     if (event === 'call.started') {
       if (!call) {
-        call = { id, provider: command.transport === 'webrtc' ? 'LiveKit WebRTC audio test' : 'Photon SIP → LiveKit', transport: command.transport === 'webrtc' ? 'webrtc' : 'sip', purpose: command.purpose === 'guard' ? 'guard' : 'intake', status: 'ringing', consent: 'pending', transcript: '', turns: [], caseId: null, scamReviewId: null, startedAt: new Date().toISOString(), endedAt: null, transcriptionSource: 'LiveKit Inference STT', synthetic: false, ...(typeof command.callerRef === 'string' ? { callerRef: command.callerRef } : {}) }
-        call.analysisMode = call.purpose === 'guard' && command.analysisMode === 'semantic' ? 'semantic' : 'wording'
+        call = { id, provider: command.transport === 'webrtc' ? 'LiveKit WebRTC audio test' : 'Photon SIP → LiveKit', transport: command.transport === 'webrtc' ? 'webrtc' : 'sip', purpose: command.purpose === 'guard' ? 'guard' : 'intake', status: 'ringing', consent: 'pending', audioConsent: false, transcript: '', turns: [], caseId: null, scamReviewId: null, startedAt: new Date().toISOString(), endedAt: null, transcriptionSource: 'LiveKit Inference STT', synthetic: false, ...(typeof command.callerRef === 'string' ? { callerRef: command.callerRef } : {}) }
+        call.analysisMode = command.analysisMode === 'semantic' ? 'semantic' : 'wording'
         if (command.callerContact && typeof command.callerContact === 'object') call.callerContact = command.callerContact as CallSession['callerContact']
         this.putCall(call)
       }
@@ -323,6 +438,7 @@ export class PharosStore extends DurableObject {
     if (call.transcriptExpiredAt || Date.parse(call.startedAt) + this.retentionMs <= Date.now()) throw new Error('Call transcript retention has expired')
     if (event === 'consent.revoked') {
       call.consent = 'no'
+      call.audioConsent = false
       call.status = 'declined'
       call.endedAt = new Date().toISOString()
       call.transcript = '[Transcript removed after consent was withdrawn]'
@@ -338,14 +454,25 @@ export class PharosStore extends DurableObject {
       this.sql.exec('DELETE FROM warning_access WHERE call_id = ?', id)
       this.sql.exec('DELETE FROM push_subscriptions WHERE scope = ?', id)
       this.callers.revokeCall(id)
+      this.audio.revoke(id)
       if (call.caseId) {
         const item = this.getCase(call.caseId)
         if (item) {
+          if (item.integrityReview?.evidenceCallId === call.id) {
+            item.integrityReview = { ...item.integrityReview, signals: [], reason: 'Earlier content evidence was removed after consent withdrawal. Any existing human-verification requirement remains in force.', version: item.integrityReview.version + 1, updatedAt: new Date().toISOString() }
+            delete item.integrityReview.evidenceCallId
+            delete item.integrityReview.evidenceSequence
+            item.scamSignals = []
+            item.scamLevel = null
+          }
           if (item.callId === call.id) {
             item.transcript = call.transcript
             item.turns = []
             item.scamSignals = []
             item.scamLevel = null
+            if (item.integrityReview) {
+              item.integrityReview = { ...item.integrityReview, status: 'review-required', analysisStatus: 'unavailable', basis: 'analysis-unavailable', reason: 'Transcript consent was withdrawn. Verify retained basic request facts through an appropriate human process.', signals: [], version: item.integrityReview.version + 1, updatedAt: new Date().toISOString() }
+            }
           }
           item.history = item.history?.filter(entry => entry.callId !== call.id)
           item.linkedCallCount = new Set(item.history?.filter(entry => entry.kind !== 'responder-review').map(entry => entry.callId)).size
@@ -363,6 +490,7 @@ export class PharosStore extends DurableObject {
       if (call.consent === consent) return { accepted: true, consent, duplicate: true }
       if (call.consent !== 'pending' || call.endedAt) throw new Error('Consent has already been decided for this session')
       call.consent = consent
+      call.audioConsent = consent === 'yes' && command.audioConsent === true
       call.status = consent === 'yes' ? 'in-progress' : 'declined'
       let warning: ResidentAlert | null = null
       if (consent === 'yes' && call.callerContact) {
@@ -385,17 +513,20 @@ export class PharosStore extends DurableObject {
       return { accepted: true, consent, warning }
     }
     if (event === 'pressure.review' || event === 'pressure.unavailable') {
-      if (call.purpose !== 'guard' || call.analysisMode !== 'semantic' || call.consent !== 'yes' || call.endedAt) throw new Error('Context review requires an open consented semantic guard call')
+      if (call.analysisMode !== 'semantic' || call.consent !== 'yes' || call.endedAt) throw new Error('Context review requires an open consented semantic call')
       let latest = call.turns.length - 1
       while (latest >= 0 && call.turns[latest].role !== 'caller') latest -= 1
       if (!Number.isSafeInteger(command.sequence) || latest < 0 || command.sequence !== latest) throw new Error('Context review sequence is stale or invalid')
       if (event === 'pressure.unavailable') {
-        if (call.reviewStatus !== 'completed' || call.reviewSequence !== latest) call.reviewStatus = 'unavailable'
+        if (call.reviewStatus !== 'completed' || call.reviewSequence !== latest) {
+          call.reviewStatus = 'unavailable'
+          this.applyIntegrityAssessment(call, { analysisStatus: 'unavailable', concerning: false })
+        }
         this.putCall(call)
         return { accepted: true, callId: id, reviewStatus: call.reviewStatus, warning: null }
       }
       const callerText = call.turns.filter(turn => turn.role === 'caller').map(turn => turn.text).join(' ')
-      const { analysis, identity } = semanticAnalysis(command.review, callerText)
+      const { analysis, identity, uncertain } = semanticAnalysis(command.review, callerText, call.purpose === 'guard' ? 'guard' : 'responder')
       if (call.reviewSequence === latest && call.reviewIdentity) {
         if (identity !== call.reviewIdentity) throw new Error('Context review sequence conflicts with its earlier result')
         return { accepted: true, callId: id, duplicate: true, reviewStatus: call.reviewStatus, warning: null }
@@ -404,6 +535,7 @@ export class PharosStore extends DurableObject {
       call.reviewSequence = latest
       call.reviewIdentity = identity
       call.reviewStatus = 'completed'
+      this.applyIntegrityAssessment(call, { analysisStatus: 'completed', concerning: analysis.shouldWarn, uncertain, signals: analysis.signals, level: analysis.level })
       this.putCall(call)
       return { accepted: true, callId: id, reviewStatus: call.reviewStatus, warning }
     }
@@ -438,6 +570,9 @@ export class PharosStore extends DurableObject {
       call.endedAt = new Date().toISOString()
       if (call.analysisMode === 'semantic' && call.reviewStatus === 'pending') call.reviewStatus = 'unavailable'
       const analysis = call.consent === 'yes' ? this.refreshCall(call) : { caseRecord: null, warning: null }
+      if (call.purpose !== 'guard' && call.consent === 'yes' && (call.reviewStatus === 'unavailable' || call.analysisMode !== 'semantic')) this.applyIntegrityAssessment(call, { analysisStatus: 'unavailable', concerning: false })
+      const finalCase = call.caseId ? this.getCase(call.caseId) : null
+      if (finalCase?.integrityReview?.status === 'clear') this.audio.revoke(call.id)
       this.putCall(call)
       return { accepted: true, callId: id, status: call.status, caseId: call.caseId, warning: analysis.warning }
     }
@@ -450,6 +585,8 @@ export class PharosStore extends DurableObject {
     const times = [row?.next, review?.next].filter(Boolean).map(value => Date.parse(value!) + this.retentionMs)
     const callerExpiry = this.callers.nextExpiry()
     if (callerExpiry) times.push(callerExpiry)
+    const audioExpiry = this.audio.nextExpiry()
+    if (audioExpiry) times.push(audioExpiry)
     for (const table of ['warning_access', 'push_subscriptions']) {
       const next = this.rows<{ next: number | null }>(`SELECT MIN(expires_at) AS next FROM ${table}`)[0]?.next
       if (next) times.push(next)
@@ -565,7 +702,7 @@ export class PharosStore extends DurableObject {
           const incidents = this.rows<{ payload: string }>('SELECT payload FROM incidents ORDER BY status, id').map((row) => decode<Incident>(row.payload))
           const zones = this.rows<{ payload: string }>('SELECT payload FROM zones ORDER BY id').map((row) => decode<Zone>(row.payload))
           const responders = this.rows<{ payload: string }>('SELECT payload FROM responders ORDER BY id').map((row) => decode<Responder>(row.payload))
-          const cases = this.rows<{ payload: string }>('SELECT payload FROM cases ORDER BY priority_rank, created_at').map((row) => decode<PharosCase>(row.payload)).map(item => ({ ...item, eligibleResponders: eligibleRespondersFor(item, responders) }))
+          const cases = this.rows<{ payload: string }>('SELECT payload FROM cases ORDER BY priority_rank, created_at').map((row) => this.decorateCase(decode<PharosCase>(row.payload))).map(item => ({ ...item, eligibleResponders: eligibleRespondersFor(item, responders) }))
           const calls = this.rows<{ payload: string }>('SELECT payload FROM calls ORDER BY started_at DESC LIMIT 100').map((row) => publicCall(decode<CallSession>(row.payload)))
           const scamReviews = this.rows<{ payload: string }>('SELECT payload FROM scam_reviews ORDER BY created_at DESC LIMIT 100').map((row) => decode<ScamReview>(row.payload))
           const alerts = this.rows<{ payload: string }>('SELECT payload FROM resident_alerts ORDER BY created_at DESC LIMIT 100').map(row => decode<ResidentAlert>(row.payload))
@@ -584,6 +721,32 @@ export class PharosStore extends DurableObject {
         case 'call.progress': {
           const call = this.getCall(String(command.id))
           return call ? json(this.callProgress(call)) : json({ error: 'Call was not found' }, 404)
+        }
+        case 'audio.chunk':
+        case 'audio.complete': {
+          return this.ctx.storage.transactionSync(() => {
+            const call = this.getCall(String(command.callId))
+            if (!call) return json({ error: 'Call was not found' }, 404)
+            if (call.purpose === 'guard') return json({ error: 'Caller evidence recording is for intake requests only' }, 403)
+            if (call.consent !== 'yes' || call.audioConsent !== true) return json({ error: 'Caller audio requires explicit recording consent' }, 403)
+            if (call.transcriptExpiredAt || Date.parse(call.startedAt) + this.retentionMs <= Date.now()) return json({ error: 'Call retention has expired' }, 410)
+            const item = call.caseId ? this.getCase(call.caseId) : null
+            if (call.endedAt && item?.integrityReview?.status === 'clear') {
+              this.audio.revoke(call.id)
+              return json({ accepted: true, discarded: true, durationSeconds: 0 })
+            }
+            const result = command.action === 'audio.chunk'
+              ? this.audio.put({ callId: call.id, startedAt: Date.parse(call.startedAt), consent: true, audioConsent: true, chunk: command.chunk as SealedAudioChunk })
+              : this.audio.complete(call.id, command.lastSequence as number)
+            return json(result)
+          })
+        }
+        case 'audio.read': {
+          const item = this.getCase(String(command.caseId))
+          if (!item || command.syntheticOnly && !item.synthetic) return json({ error: 'Case was not found' }, 404)
+          const call = this.retainedAudioSource(item)
+          if (!call) return json({ audio: null })
+          return json({ audio: this.audio.read(call.id) })
         }
         case 'call.turn': {
           const callId = String(command.callId)
@@ -617,6 +780,7 @@ export class PharosStore extends DurableObject {
           if (!caseRecord || !responder) return json({ error: 'Case or responder was not found' }, 404)
           if (command.syntheticOnly && (!caseRecord.synthetic || !responder.synthetic)) return json({ error: 'Case or responder was not found' }, 404)
           if (caseRecord.status === 'resolved') return json({ error: 'Reopen the resolved case before claiming it' }, 409)
+          if (!integrityAllowsDispatch(caseRecord)) return json({ error: 'Human acceptance of the current request review is required before assignment' }, 409)
           if (caseRecord.assignedTo === responderId) return json({ caseRecord, responder, alreadyClaimed: true })
           if (caseRecord.assignedTo) return json({ error: 'Another responder has already claimed this case' }, 409)
           if (!responder.approved || !responder.available || responder.assignedCount - (caseRecord.followUpOwner === responderId ? 1 : 0) >= responder.capacity) return json({ error: 'Responder is not currently eligible' }, 409)
@@ -675,6 +839,8 @@ export class PharosStore extends DurableObject {
           const caseRecord = this.getCase(id)
           if (!caseRecord) return json({ error: 'Case was not found' }, 404)
           if (command.syntheticOnly && !caseRecord.synthetic) return json({ error: 'Case was not found' }, 404)
+          if (status === 'claimed' && !integrityAllowsDispatch(caseRecord)) return json({ error: 'Human acceptance of the current request review is required before assignment' }, 409)
+          if (status === 'resolved' && ['pending', 'review-required'].includes(caseRecord.integrityReview!.status)) return json({ error: 'Accept or dismiss this request with a recorded reason before closing it' }, 409)
           if (status === 'claimed' && !caseRecord.assignedTo) return json({ error: 'Claim the case through an eligible responder first' }, 409)
           if ((status === 'resolved' || status === 'new') && caseRecord.assignedTo) {
             const assignedResponder = this.getResponder(caseRecord.assignedTo)
@@ -704,6 +870,7 @@ export class PharosStore extends DurableObject {
         case 'case.progress': {
           const item = this.getCase(String(command.id))
           if (!item || command.syntheticOnly && !item.synthetic) return json({ error: 'Case was not found' }, 404)
+          if (!integrityAllowsDispatch(item)) return json({ error: 'Human acceptance of the current request review is required before reporting an arrival time' }, 409)
           if (typeof command.expectedUpdatedAt !== 'string' || command.expectedUpdatedAt !== item.updatedAt) return json({ error: 'This case changed. Refresh and review the latest report before updating response status.' }, 409)
           if (!item.assignedTo || item.status === 'resolved' || item.assignmentNeedsReview || !this.validAssignedResponder(item)) return json({ error: 'A currently eligible assigned responder and reviewed coverage are required.' }, 409)
           const state = String(command.state)
@@ -718,6 +885,28 @@ export class PharosStore extends DurableObject {
           this.putCase(item)
           this.audit('case.response-reported', { caseId: item.id, responderId: item.assignedTo, state, etaAt: item.responseProgress.etaAt })
           return json({ caseRecord: item })
+        }
+        case 'case.integrity-review': {
+          return this.ctx.storage.transactionSync(() => {
+            const item = this.getCase(String(command.id))
+            if (!item || command.syntheticOnly && !item.synthetic) return json({ error: 'Case was not found' }, 404)
+            const current = item.integrityReview!
+            if (!Number.isSafeInteger(command.expectedVersion) || command.expectedVersion !== current.version
+              || command.expectedSourceCallId !== current.sourceCallId || command.expectedSequence !== current.sourceSequence) return json({ error: 'This request changed. Refresh the transcript and review the latest source before deciding.' }, 409)
+            const decision = String(command.decision)
+            const reason = typeof command.reason === 'string' ? command.reason.trim() : ''
+            if (!['accept', 'dismiss'].includes(decision) || reason.length < 8 || reason.length > 1000) return json({ error: 'Choose accept or dismiss and record a reason of 8–1000 characters' }, 400)
+            if (!['responder', 'coordinator', 'demo'].includes(String(command.role))) return json({ error: 'A responder review session is required' }, 403)
+            const at = new Date().toISOString()
+            item.integrityReview = { ...current, status: decision === 'accept' ? 'accepted' : 'dismissed', version: current.version + 1, basis: 'human-decision', reason: `Human ${decision === 'accept' ? 'acceptance' : 'dismissal'}: ${reason}`, updatedAt: at,
+              decision: { action: decision as 'accept' | 'dismiss', reason, at, role: String(command.role), sourceCallId: current.sourceCallId, sourceSequence: current.sourceSequence } }
+            if (decision === 'dismiss') this.invalidateTravel(item, at)
+            item.updatedAt = at
+            item.history = [...(item.history || []), { id: crypto.randomUUID(), callId: current.sourceCallId, at, kind: 'responder-review' as const, summary: `Request review ${decision === 'accept' ? 'accepted' : 'dismissed'} by the response desk.`, priority: item.priority, reason }].slice(-100)
+            this.putCase(item)
+            this.audit('case.integrity-decided', { caseId: item.id, sourceCallId: current.sourceCallId, sourceSequence: current.sourceSequence, version: item.integrityReview.version, decision, reason, role: command.role })
+            return json({ caseRecord: this.decorateCase(item) })
+          })
         }
         case 'case.priority': {
           const caseRecord = this.getCase(String(command.id))
@@ -769,9 +958,11 @@ export class PharosStore extends DurableObject {
           for (const row of rows) {
             const call = decode<CallSession>(row.payload)
             this.callers.revokeCall(row.id)
+            this.audio.revoke(row.id)
             call.transcript = '[Transcript expired under the configured retention policy]'
             call.turns = []
             call.transcriptExpiredAt = new Date().toISOString()
+            call.audioConsent = false
             delete call.callerRef
             delete call.callerContact
             delete call.reviewIdentity
@@ -792,10 +983,32 @@ export class PharosStore extends DurableObject {
           for (const row of caseRows) {
             const caseRecord = decode<PharosCase>(row.payload)
             const source = caseRecord.callId ? this.getCall(caseRecord.callId) : null
-            if (source ? Date.parse(source.startedAt) < cutoff : Date.parse(caseRecord.createdAt) < cutoff) {
+            const integritySource = caseRecord.integrityReview?.evidenceCallId ? this.getCall(caseRecord.integrityReview.evidenceCallId) : null
+            const evidenceExpired = Boolean(integritySource && (integritySource.transcriptExpiredAt || integritySource.consent !== 'yes' || Date.parse(integritySource.startedAt) < cutoff))
+            const currentSourceExpired = source ? Date.parse(source.startedAt) < cutoff : Date.parse(caseRecord.createdAt) < cutoff
+            const currentTextRemoved = currentSourceExpired && caseRecord.transcript !== '[Transcript expired under the configured retention policy]'
+            if (evidenceExpired) {
+              caseRecord.integrityReview!.signals = []
+              delete caseRecord.integrityReview!.evidenceCallId
+              delete caseRecord.integrityReview!.evidenceSequence
+              caseRecord.scamSignals = []
+              caseRecord.scamLevel = null
+            }
+            if (currentSourceExpired) {
               caseRecord.transcript = '[Transcript expired under the configured retention policy]'
               caseRecord.turns = []
               caseRecord.scamSignals = caseRecord.scamSignals.map((signal) => ({ ...signal, evidence: '[expired]' }))
+              if (caseRecord.integrityReview) caseRecord.integrityReview.signals = []
+            }
+            if (caseRecord.integrityReview && (evidenceExpired || currentTextRemoved)) {
+              const review = caseRecord.integrityReview
+              const at = new Date(Math.max(Date.now(), Date.parse(review.updatedAt) || 0, Date.parse(caseRecord.updatedAt) || 0) + 1).toISOString()
+              caseRecord.integrityReview = { ...review, version: review.version + 1, updatedAt: at, analysisStatus: 'unavailable',
+                status: review.status === 'accepted' || review.status === 'dismissed' ? review.status : 'review-required',
+                basis: review.status === 'accepted' || review.status === 'dismissed' ? 'human-decision' : 'analysis-unavailable',
+                reason: review.status === 'accepted' ? 'Earlier recorded evidence expired. The recorded human acceptance remains attached to its reviewed source.' : review.status === 'dismissed' ? 'Earlier recorded evidence expired. The recorded human dismissal remains attached to its reviewed source.' : 'Earlier recorded evidence expired. Human verification remains required; this does not establish wrongdoing.' }
+              caseRecord.updatedAt = at
+              if (caseRecord.integrityReview.status === 'review-required') this.invalidateTravel(caseRecord, at)
             }
             caseRecord.history = caseRecord.history?.filter(entry => Date.parse(entry.at) >= cutoff)
             caseRecord.linkedCallCount = new Set(caseRecord.history?.filter(entry => entry.kind !== 'responder-review').map(entry => entry.callId)).size
@@ -817,6 +1030,7 @@ export class PharosStore extends DurableObject {
           this.sql.exec('DELETE FROM warning_access WHERE expires_at <= ?', Date.now())
           this.sql.exec('DELETE FROM push_subscriptions WHERE expires_at <= ?', Date.now())
           this.callers.prune()
+          this.audio.prune()
           await this.scheduleExpiry()
           return json({ prunedCalls: rows.length, cutoff: cutoffIso })
         }
@@ -831,6 +1045,7 @@ export class PharosStore extends DurableObject {
   }
 
   private putCase(caseRecord: PharosCase): void {
+    caseRecord.integrityReview ||= this.initialIntegrity(caseRecord, caseRecord.callId ? this.getCall(caseRecord.callId) : null)
     const previous = this.getCase(caseRecord.id)
     if (previous && Date.parse(caseRecord.updatedAt) <= Date.parse(previous.updatedAt)) caseRecord.updatedAt = new Date(Date.parse(previous.updatedAt) + 1).toISOString()
     this.sql.exec(

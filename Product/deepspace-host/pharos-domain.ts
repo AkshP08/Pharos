@@ -42,6 +42,26 @@ export interface ScamSignal {
   end?: number
 }
 
+export interface IntegrityReview {
+  status: 'pending' | 'clear' | 'review-required' | 'accepted' | 'dismissed'
+  version: number
+  sourceCallId: string
+  sourceSequence: number
+  analysisStatus: 'pending' | 'completed' | 'unavailable'
+  basis: 'analysis-pending' | 'model-clear' | 'content-signals' | 'analysis-unavailable' | 'human-decision'
+  reason: string
+  signals: ScamSignal[]
+  evidenceCallId?: string
+  evidenceSequence?: number
+  updatedAt: string
+  decision?: { action: 'accept' | 'dismiss'; reason: string; at: string; role: string; sourceCallId: string; sourceSequence: number }
+}
+
+/** Content review controls dispatch eligibility, never the factual urgency rank. */
+export function integrityAllowsDispatch(item: { synthetic: boolean; integrityReview?: IntegrityReview }): boolean {
+  return item.integrityReview ? ['clear', 'accepted'].includes(item.integrityReview.status) : item.synthetic
+}
+
 export interface PharosCase {
   id: string
   incidentId: string
@@ -80,6 +100,8 @@ export interface PharosCase {
   linkedCallCount?: number
   history?: Array<{ id?: string; callId: string; at: string; kind: 'initial' | 'caller-update' | 'responder-review'; summary: string; previousPriority?: Priority; priority: Priority; reason: string; changedFields?: string[] }>
   responseProgress?: { state: 'en-route' | 'arrived' | 'delayed' | 'unable' | 'review-needed'; responderId: string; etaAt: string | null; updatedAt: string }
+  integrityReview?: IntegrityReview
+  audio?: { available: boolean; callId: string; durationSeconds: number; expiresAt: string | null }
 }
 
 export interface CallSession {
@@ -87,6 +109,7 @@ export interface CallSession {
   provider: string
   status: 'ringing' | 'in-progress' | 'completed' | 'declined' | 'failed'
   consent: 'pending' | 'yes' | 'no'
+  audioConsent?: boolean
   transcript: string
   turns: TranscriptTurn[]
   caseId: string | null
@@ -219,7 +242,8 @@ function answerAfterPrompt(turns: TranscriptTurn[], prompt: RegExp): string | nu
   return null
 }
 
-export function eligibleRespondersFor(item: Pick<PharosCase, 'synthetic' | 'zoneId' | 'needs' | 'status' | 'followUpOwner'>, responders: Responder[]): string[] {
+export function eligibleRespondersFor(item: Pick<PharosCase, 'synthetic' | 'zoneId' | 'needs' | 'status' | 'followUpOwner' | 'integrityReview'>, responders: Responder[]): string[] {
+  if (!integrityAllowsDispatch(item)) return []
   if (!item.zoneId || item.status === 'resolved') return []
   return responders.filter(responder => responder.synthetic === item.synthetic && responder.approved && responder.available
     && responder.serviceAreas.includes(item.zoneId!) && responder.assignedCount - (item.followUpOwner === responder.id ? 1 : 0) < responder.capacity
@@ -259,6 +283,7 @@ export function analyzeCall(input: {
   incidentId: string
   synthetic: boolean
   createdAt?: string
+  preserveIntake?: boolean
 }): { caseRecord: PharosCase | null; scamReview: ScamReview | null; callKind: 'help' | 'scam-check' | 'unclear' } {
   const { callId, turns, zones, responders, incidentId, synthetic } = input
   const createdAt = input.createdAt ?? nowIso()
@@ -284,7 +309,7 @@ export function analyzeCall(input: {
     synthetic,
   } : null
 
-  if (!hasHelpNeed && callKind === 'scam-check') return { caseRecord: null, scamReview, callKind }
+  if (!hasHelpNeed && callKind === 'scam-check' && !input.preserveIntake) return { caseRecord: null, scamReview, callKind }
   if (!callerText) return { caseRecord: null, scamReview, callKind }
 
   const locationText = facts.locationText

@@ -234,10 +234,33 @@ test('agent-only evidence and evidence from a different call are rejected', asyn
   assert.equal((await overview(mf)).alerts.filter(item => item.callId === 'semantic-agent-evidence').length, 0);
 });
 
+test('semantic intake review retains the request and factual urgency without a resident warning', async (t) => {
+  const mf = runtime(t);
+  const id = 'eligible-responder-intake';
+  await begin(mf, id, { purpose: 'intake' });
+  const created = await turn(mf, id, `We need rescue near Riverbend, Zone 3. Water is rising inside and we cannot get out. ${codeText}`);
+  assert.ok(created.caseId);
+  assert.equal(created.warning, null);
+  const before = (await overview(mf)).cases.find(item => item.id === created.caseId);
+  assert.equal(before.priority, 'immediate');
+  assert.equal(before.integrityReview.status, 'pending');
+  const result = await review(mf, id, 0, { ...medium, uncertain: false });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.equal(result.data.warning, null);
+  const data = await overview(mf);
+  const after = data.cases.find(item => item.id === created.caseId);
+  assert.equal(after.integrityReview.status, 'review-required');
+  assert.equal(after.integrityReview.signals.length, 2);
+  assert.equal(after.priority, before.priority);
+  assert.equal(after.immediateDanger, 'yes');
+  assert.equal(after.zoneId, before.zoneId);
+  assert.deepEqual(after.eligibleResponders, []);
+  assert.equal(data.alerts.filter(item => item.callId === id).length, 0);
+});
+
 test('review eligibility is enforced after call mode, consent, closure, or revocation changes', async (t) => {
   const mf = runtime(t);
   const scenarios = [
-    ['intake', { purpose: 'intake' }, 409],
     ['legacy-wording', { analysisMode: 'wording' }, 409],
     ['pending-consent', { consent: null }, 409],
     ['declined-consent', { consent: false }, 409],

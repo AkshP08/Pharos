@@ -95,6 +95,16 @@ async function getCase(mf, id) {
   return result.data.caseRecord;
 }
 
+async function acceptForWorkflow(mf, id, cookie) {
+  const { integrityReview: review } = await getCase(mf, id);
+  const result = await request(mf, `/api/cases/${id}/integrity-review`, { cookie, body: {
+    decision: 'accept', reason: 'Fictional desk verified this report before ownership or closure.',
+    expectedVersion: review.version, expectedSourceCallId: review.sourceCallId, expectedSequence: review.sourceSequence,
+  } });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.equal(result.data.caseRecord.integrityReview.status, 'accepted');
+}
+
 async function addResponder(mf, cookie) {
   const registered = await request(mf, '/api/responders', { cookie, body: {
     name: 'Fictional repeat-call responder', organization: 'Fictional test desk',
@@ -115,6 +125,7 @@ test('a confirmed repeat report preserves the owner and human decision until new
   const id = await report(mf, 'repeat-first');
   const before = await getCase(mf, id);
   const responder = await addResponder(mf, cookie);
+  await acceptForWorkflow(mf, id, cookie);
   assert.equal((await request(mf, `/api/cases/${id}/claim`, { cookie, body: { responderId: responder.id } })).status, 200);
   assert.equal((await request(mf, `/api/cases/${id}/priority`, { cookie, body: { priority: 'follow-up', reason: 'Human confirmed a nonurgent supply delivery.' } })).status, 200);
   await begin(mf, 'repeat-second');
@@ -216,6 +227,7 @@ test('resolved cases stay closed when a later report arrives from the same phone
   const mf = runtime(t);
   const id = await report(mf, 'resolved-old');
   const cookie = await login(mf);
+  await acceptForWorkflow(mf, id, cookie);
   assert.equal((await request(mf, `/api/cases/${id}/status`, { cookie, body: { status: 'resolved' } })).status, 200);
   const fresh = await report(mf, 'resolved-new', { text: repeatDanger });
   assert.notEqual(fresh, id);
@@ -246,7 +258,10 @@ test('human work on a provisional report prevents deletion during later matching
       await begin(mf, `worked-new-${action}`);
       const provisional = (await turn(mf, `worked-new-${action}`, 'I am calling back about the same request. We need rescue.')).caseId;
       const cookie = await login(mf);
-      if (action === 'resolve') assert.equal((await request(mf, `/api/cases/${provisional}/status`, { cookie, body: { status: 'resolved' } })).status, 200);
+      if (action === 'resolve') {
+        await acceptForWorkflow(mf, provisional, cookie);
+        assert.equal((await request(mf, `/api/cases/${provisional}/status`, { cookie, body: { status: 'resolved' } })).status, 200);
+      }
       if (action === 'priority') assert.equal((await request(mf, `/api/cases/${provisional}/priority`, { cookie, body: { priority: 'urgent', reason: 'Human confirmed this is a separate household.' } })).status, 200);
       if (action === 'followup-owner') {
         const responder = await addResponder(mf, cookie);
@@ -320,6 +335,7 @@ test('new life-safety evidence reopens a case resolved during that still-active 
   const mf = runtime(t);
   const id = await report(mf, 'active-resolved', { end: false });
   const cookie = await login(mf);
+  await acceptForWorkflow(mf, id, cookie);
   assert.equal((await request(mf, `/api/cases/${id}/status`, { cookie, body: { status: 'resolved' } })).status, 200);
   await turn(mf, 'active-resolved', 'Now water is rising inside our house and we cannot get out.', 1);
   const after = await getCase(mf, id);

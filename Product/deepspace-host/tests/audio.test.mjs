@@ -86,16 +86,16 @@ test('wrong keys, changed call identity, tampered ciphertext, and expired playba
 
 test('revocation and scheduled expiry remove both manifest and encrypted chunks', async t => {
   const { store, db, setNow } = fixture(t, 60000);
-  store.put(input(await sealAudioChunk(secret, 'fictional-audio-call', 0, b64(pcm)))); store.complete('fictional-audio-call', 0);
+  const original = await sealAudioChunk(secret, 'fictional-audio-call', 0, b64(pcm));
+  store.put(input(original)); store.complete('fictional-audio-call', 0);
   setNow(start + 60000); assert.equal(store.read('fictional-audio-call'), null); assert.equal(store.metadata('fictional-audio-call').available, false);
   store.prune(); assert.equal(store.nextExpiry(), null); assert.equal(db.prepare('SELECT COUNT(*) AS n FROM call_audio_chunks').get().n, 0);
-  assert.throws(() => store.put(input(awaitableChunk)), /unavailable/);
+  assert.throws(() => store.put(input(original)), /unavailable/, 'An otherwise valid retry cannot revive expired audio');
   const other = await sealAudioChunk(secret, 'another-call', 0, b64(pcm));
   setNow(start); store.put(input(other, { callId: 'another-call' })); store.revoke('another-call');
   assert.equal(store.read('another-call'), null); assert.equal(db.prepare('SELECT COUNT(*) AS n FROM call_audio_manifests').get().n, 0);
 });
 
-const awaitableChunk = { sequence: 0, bytes: 8, nonce: '', ciphertext: '', digest: '' };
 test('recording duration and per-chunk size are bounded independently of client metadata', async t => {
   const { store } = fixture(t);
   await assert.rejects(sealAudioChunk(secret, 'fictional-audio-call', 0, b64(Buffer.alloc(maximumChunkBytes + 2))), /unavailable/);

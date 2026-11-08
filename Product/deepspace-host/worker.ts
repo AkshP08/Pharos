@@ -3,6 +3,7 @@ import { PharosStore } from './pharos-store'
 import { sendWarningSms } from './pharos-notify'
 import { sendPush, validatePushSubscription, type PushSubscription } from './pharos-push'
 import { createCallerContact, normalizeProviderPhone } from './pharos-callers'
+import { audioWave, sealAudioChunk, type RetainedAudio } from './pharos-audio'
 export { PharosStore } from './pharos-store'
 
 export const __DO_MANIFEST__ = [
@@ -159,7 +160,7 @@ async function buildAndPersistCall(env: Env, call: CallSession, previousCaseId?:
   const zones = overview.zones as Parameters<typeof analyzeCall>[0]['zones']
   const responders = overview.responders as Responder[]
   const incidentId = (overview.incidents as Array<{ id: string; status: string }>).find((item) => item.status === 'active')?.id ?? 'incident-trinity'
-  const analysis = analyzeCall({ callId: call.id, turns: call.turns, zones, responders, incidentId, synthetic: call.synthetic, createdAt: call.startedAt })
+  const analysis = analyzeCall({ callId: call.id, turns: call.turns, zones, responders, incidentId, synthetic: call.synthetic, createdAt: call.startedAt, preserveIntake: call.purpose !== 'guard' })
   if (analysis.caseRecord) {
     const existing = previousCaseId ? (await callStore(env, 'case.get', { id: previousCaseId })).caseRecord as PharosCase | undefined : undefined
     if (existing) {
@@ -194,7 +195,9 @@ async function hashToken(token: string): Promise<string> {
 
 async function deliverWarning(env: Env, warning: import('./pharos-domain').ResidentAlert): Promise<void> {
   const call = (await callStore(env, 'call.get', { id: warning.callId })).call as CallSession
-  if (call.consent !== 'yes' || call.transcriptExpiredAt) return
+  // Intake concerns belong to the responder's case review. Resident delivery
+  // remains reserved for the separate, disabled future guard experiment.
+  if (call.purpose !== 'guard' || call.consent !== 'yes' || call.transcriptExpiredAt) return
   let pushAccepted = false
   if (env.PHAROS_VAPID_PUBLIC_KEY && env.PHAROS_VAPID_PRIVATE_KEY && env.PHAROS_VAPID_SUBJECT) {
     const records = await callStore(env, 'push.list', { callId: warning.callId })
@@ -243,7 +246,7 @@ async function handleVoiceIngest(request: Request, env: Env, ctx: ExecutionConte
       if (body.purpose !== 'guard') callerRef = toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `caller:${number}`))
     }
   }
-  const result = await callStore(env, 'voice.event', { callId, event, purpose: body.purpose, transport: body.transport, analysisMode: body.analysisMode, review: body.review, callerRef, callerContact, consent: body.consent, role: body.role, text: body.text, sequence: body.sequence, deliveryFailed: body.deliveryFailed === true, warningTokenHash })
+  const result = await callStore(env, 'voice.event', { callId, event, purpose: body.purpose, transport: body.transport, analysisMode: body.analysisMode, review: body.review, callerRef, callerContact, consent: body.consent, audioConsent: body.audioConsent === true, role: body.role, text: body.text, sequence: body.sequence, deliveryFailed: body.deliveryFailed === true, warningTokenHash })
   if (result.warning) ctx.waitUntil(deliverWarning(env, result.warning as import('./pharos-domain').ResidentAlert))
   return responseJson({ ...result, ...(warningUrl ? { warningUrl } : {}) }, event === 'call.started' || event === 'turn' ? 202 : 200)
 }
@@ -281,6 +284,33 @@ export default {
 
     if (pathname === '/api/voice/ingest' && method === 'POST') {
       try { return await handleVoiceIngest(request, env, ctx) } catch (error) { return apiError(error, (error as { status?: number }).status || 400) }
+    }
+    const audioUploadMatch = pathname.match(/^\/api\/voice\/calls\/([a-zA-Z0-9._:-]+)\/audio\/(chunks|complete)$/)
+    if (audioUploadMatch && method === 'POST') {
+      const bearer = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || ''
+      if (!configuredResponderAuth(env) || !(await verifySecret(bearer, env.PHAROS_INGEST_TOKEN))) return responseJson({ error: 'Authorized voice service access is required.' }, 401)
+      try {
+        const body = await readBody(request)
+        const callId = audioUploadMatch[1]
+        if (audioUploadMatch[2] === 'chunks') {
+          if (typeof body.sequence !== 'number' || Object.keys(body).some(key => !['sequence', 'pcmBase64'].includes(key))) return responseJson({ error: 'A caller PCM chunk and sequence are required.' }, 400)
+          const chunk = await sealAudioChunk(env.PHAROS_SESSION_SECRET!, callId, body.sequence, body.pcmBase64)
+          return responseJson(await callStore(env, 'audio.chunk', { callId, chunk }))
+        }
+        if (typeof body.lastSequence !== 'number' || Object.keys(body).some(key => key !== 'lastSequence')) return responseJson({ error: 'The final caller audio sequence is required.' }, 400)
+        return responseJson(await callStore(env, 'audio.complete', { callId, lastSequence: body.lastSequence }))
+      } catch (error) { return apiError(error, (error as { status?: number }).status || 400) }
+    }
+    const caseAudioMatch = pathname.match(/^\/api\/cases\/([a-zA-Z0-9._:-]+)\/audio$/)
+    if (caseAudioMatch && method === 'GET') {
+      // Audio never inherits the public synthetic-demo fallback or URL tokens.
+      if (!configuredResponderAuth(env) || !(await getSessionRole(request, env))) return responseJson({ error: 'Responder sign-in is required for caller audio.' }, 401)
+      try {
+        const result = await callStore(env, 'audio.read', { caseId: caseAudioMatch[1] })
+        if (!result.audio) return responseJson({ error: 'No retained, consented caller recording is available for this report.' }, 404)
+        const bytes = await audioWave(env.PHAROS_SESSION_SECRET!, result.audio as unknown as RetainedAudio)
+        return new Response(bytes, { headers: { 'Content-Type': 'audio/wav', 'Content-Length': String(bytes.length), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline; filename="caller-audio.wav"' } })
+      } catch (error) { return apiError(error, (error as { status?: number }).status || 400) }
     }
     const callProgressMatch = pathname.match(/^\/api\/voice\/calls\/([a-zA-Z0-9._:-]+)\/progress$/)
     if (callProgressMatch && method === 'GET') {
@@ -408,6 +438,11 @@ export default {
       if (priorityMatch && method === 'POST') {
         const body = await readBody(request)
         return responseJson(await callStore(env, 'case.priority', { id: priorityMatch[1], priority: body.priority, reason: body.reason, role: await getSessionRole(request, env) || 'demo', syntheticOnly: !configuredResponderAuth(env) }))
+      }
+      const integrityMatch = pathname.match(/^\/api\/cases\/([a-zA-Z0-9._:-]+)\/integrity-review$/)
+      if (integrityMatch && method === 'POST') {
+        const body = await readBody(request)
+        return responseJson(await callStore(env, 'case.integrity-review', { id: integrityMatch[1], decision: body.decision, reason: body.reason, expectedVersion: body.expectedVersion, expectedSourceCallId: body.expectedSourceCallId, expectedSequence: body.expectedSequence, role: await getSessionRole(request, env) || 'demo', syntheticOnly: !configuredResponderAuth(env) }))
       }
       const statusMatch = pathname.match(/^\/api\/cases\/([a-zA-Z0-9._:-]+)\/status$/)
       if (statusMatch && method === 'POST') {

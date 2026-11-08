@@ -85,16 +85,23 @@ test('synthetic call creates a persistent ranked case with area and eligible res
   assert.ok(overview.calls.some(item => item.id === data.call.id && item.caseId === data.caseRecord.id));
 });
 
-test('scam-only call gets evidence and next steps without creating a help case', async () => {
+test('scam-only intake stays as a review-required request with evidence and no invented danger', async () => {
   const mf = runtime();
   const { response, data } = await request(mf, '/api/demo/calls', { body: {
     transcript: 'Caller: Is this a scam? Someone called me claiming to be the county relief office and asked for gift cards within 5 minutes. Do not call anyone else, they said.',
   } });
   assert.equal(response.status, 201);
-  assert.equal(data.caseRecord, null);
+  assert.ok(data.caseRecord, 'Intake must retain a request instead of silently dropping scam-only wording');
+  assert.equal(data.caseRecord.integrityReview.status, 'review-required');
+  assert.equal(data.caseRecord.priority, 'follow-up');
+  assert.equal(data.caseRecord.immediateDanger, 'unknown');
+  assert.deepEqual(data.caseRecord.eligibleResponders, []);
   assert.equal(data.callKind, 'scam-check');
   assert.equal(data.scamReview.level, 'high');
   assert.ok(data.scamReview.signals.some(signal => signal.evidence === 'gift cards'));
+  const overview = (await request(mf, '/api/overview')).data;
+  assert.ok(overview.cases.some(item => item.id === data.caseRecord.id));
+  assert.equal(overview.alerts.filter(item => item.callId === data.call.id).length, 0, 'Intake concerns are responder evidence, not resident notifications');
 });
 
 test('live transcript requires consent, excludes sample responders, and survives a demo reset', async () => {

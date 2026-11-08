@@ -56,7 +56,7 @@ async function login(mf, coordinator = false) {
 const safe = 'We need drinking water near the Riverbend footbridge, Zone 3. We are safe.';
 
 async function begin(mf, id, { purpose = 'intake', consent = true } = {}) {
-  assert.equal((await ingest(mf, 'call.started', id, { purpose, transport: 'sip', callerNumber: '+15550001111' })).status, 202);
+  assert.equal((await ingest(mf, 'call.started', id, { purpose, transport: 'sip', analysisMode: 'semantic', callerNumber: '+15550001111' })).status, 202);
   if (consent !== null) assert.equal((await ingest(mf, 'consent', id, { consent })).status, 200);
 }
 
@@ -84,10 +84,21 @@ async function responder(mf, cookie, overrides = {}) {
   return result.data.responder;
 }
 
+async function acceptForProgress(mf, id, cookie) {
+  const { integrityReview: review } = await getCase(mf, id);
+  const result = await request(mf, `/api/cases/${id}/integrity-review`, { cookie, body: {
+    decision: 'accept', reason: 'Fictional desk verified this report before testing response progress.',
+    expectedVersion: review.version, expectedSourceCallId: review.sourceCallId, expectedSequence: review.sourceSequence,
+  } });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.equal(result.data.caseRecord.integrityReview.status, 'accepted');
+}
+
 async function assigned(mf, callId = 'progress-call') {
   const cookie = await login(mf);
   await begin(mf, callId);
   const id = (await turn(mf, callId, safe)).caseId;
+  await acceptForProgress(mf, id, cookie);
   const owner = await responder(mf, cookie);
   assert.equal((await request(mf, `/api/cases/${id}/claim`, { cookie, body: { responderId: owner.id } })).status, 200);
   return { id, owner, cookie, callId };
@@ -116,7 +127,7 @@ test('voice progress distinguishes collecting details from a desk receipt and ne
   assert.match(collecting.data.message, /arrival time.*not confirmed/i);
   await turn(mf, 'progress-collecting', safe);
   const receipt = await read(mf, 'progress-collecting');
-  assert.equal(receipt.data.state, 'pending');
+  assert.equal(receipt.data.state, 'review-needed', 'A pending contextual review is held for human verification, even when its reported facts are nonurgent');
   assert.equal(receipt.data.announce, false);
   assert.match(receipt.data.message, /(?:desk|review)/i);
   assert.match(receipt.data.message, /(?:not confirmed|isn't confirmed|unconfirmed)/i);
@@ -258,6 +269,7 @@ test('approval withdrawal suppresses a former estimate, and follow-up ownership 
   assert.equal((await write(mf, setup, { state: 'arrived' })).status, 409);
   await begin(mf, 'progress-followup');
   const id = (await turn(mf, 'progress-followup', 'We need shelter but I do not know where we are.')).caseId;
+  await acceptForProgress(mf, id, setup.cookie);
   const owner = await responder(mf, setup.cookie);
   assert.equal((await request(mf, `/api/cases/${id}/followup-owner`, { cookie: setup.cookie, body: { responderId: owner.id } })).status, 200);
   assert.equal((await write(mf, { id, owner, cookie: setup.cookie }, { state: 'en-route', etaMinutes: 10 })).status, 409);

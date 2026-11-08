@@ -1,4 +1,4 @@
-# SignalBridge Project Log
+# Pharos Project Log
 
 **Created:** 2026-11-07 3:07 PM CST
 **Purpose:** Running record of project decisions, problems, research, and work completed. Add a dated entry after each meaningful project update.
@@ -7,21 +7,21 @@
 
 ### Team and project
 - Team: two high school seniors; beginner hackathon experience.
-- Selected concept: **SignalBridge**, combining State Farm's catastrophe response challenge, T-Mobile's Safe Signal challenge, and Photon's API challenge.
+- Selected concept: **Pharos**, combining State Farm's catastrophe response challenge, T-Mobile's Safe Signal challenge, and Photon's API challenge.
 - Intended HackUTD track: **Design** (the team already has Beginner eligibility).
 - Goal: one clear, working demo that shows resident protection and responder coordination in a disaster scenario.
 
 ### Problem statement
 During a disaster, people need to receive real safety information and request help. Scammers may exploit the disruption by impersonating public agencies, utilities, charities, or relief organizations and pressuring affected people to click links, share sensitive information, or send money.
 
-Do not claim that scammers have broken into emergency phone lines unless the organizers provide evidence. SignalBridge does not monitor ordinary phone calls or authenticate the real-world identity of arbitrary callers.
+Do not claim that scammers have broken into emergency phone lines unless the organizers provide evidence. Pharos does not monitor ordinary phone calls or authenticate the real-world identity of arbitrary callers.
 
 ### Proposed product flow
-1. A resident sends a help request or suspicious message through a communication channel connected to SignalBridge.
-2. SignalBridge determines whether the submission looks like a help request, a public/safety message, or a suspicious solicitation.
+1. A resident sends a help request or suspicious message through a communication channel connected to Pharos.
+2. Pharos determines whether the submission looks like a help request, a public/safety message, or a suspicious solicitation.
 3. A help request becomes a responder case with stated location, need, time, information gaps, and status.
 4. A suspicious message gets a **Pressure Trace**: highlighted phrases, observed pressure tactics, risk/confidence level, and a safe next step.
-5. A human responder reviews, prioritizes, and assigns cases. SignalBridge does not dispatch responders or tell a resident that help is on the way without human confirmation.
+5. A human responder reviews, prioritizes, and assigns cases. Pharos does not dispatch responders or tell a resident that help is on the way without human confirmation.
 
 ### Fairness and triage safeguards
 - Use an understandable, ordinal queue based on reported immediate danger and time sensitivity, following life safety and incident stabilization as operational priorities. This is a hackathon demonstration, not a medical triage standard.
@@ -69,7 +69,7 @@ The result should say **suspicious / needs verification**, quote the evidence, e
 ## 2026-11-07 3:09 PM CST — Example flow and queue fairness
 
 ### Example scenario
-In a fictional flood, one resident reports that water is rising in their home, they cannot leave safely, and a household member depends on powered medical equipment. SignalBridge creates a **self-reported, immediate life-safety case**, highlights the exact facts that drove the suggested priority, and asks a responder to confirm or update it. A second resident who says “I am the most urgent” is not automatically moved ahead; SignalBridge asks the same structured questions and compares the reported danger and time sensitivity. If a request lacks location or condition details, it stays **Needs follow-up / unknown** rather than being downgraded.
+In a fictional flood, one resident reports that water is rising in their home, they cannot leave safely, and a household member depends on powered medical equipment. Pharos creates a **self-reported, immediate life-safety case**, highlights the exact facts that drove the suggested priority, and asks a responder to confirm or update it. A second resident who says “I am the most urgent” is not automatically moved ahead; Pharos asks the same structured questions and compares the reported danger and time sensitivity. If a request lacks location or condition details, it stays **Needs follow-up / unknown** rather than being downgraded.
 
 Separately, an alleged county message says: “Send your verification code in five minutes to reserve a rescue spot. Do not tell anyone.” Pressure Trace highlights the unverified authority claim, artificial deadline, request for a code, and secrecy instruction. It reports a suspicious pattern with evidence and recommends verifying through contact details found independently. It does not claim to know the sender's identity or intent. An evacuation alert may also contain urgency; urgency alone is not enough to label it a scam.
 
@@ -88,7 +88,7 @@ Append a new dated entry when the team changes scope, confirms an integration, c
 
 ## 2026-11-07 3:23 PM CST — Sponsor credits and tool offers received
 
-The team supplied HackUTD in-kind offer details. None have been redeemed yet. For SignalBridge, prioritize Photon first because the app needs a sponsor API; consider Lovable for a fast UI and Deepspace/AIsa/Hugging Face only if their capabilities fit the build. The T-Mobile challenge may already provide a baseline classifier and synthetic dataset, so extra model/API credits are optional.
+The team supplied HackUTD in-kind offer details. None have been redeemed yet. For Pharos, prioritize Photon first because the app needs a sponsor API; consider Lovable for a fast UI and Deepspace/AIsa/Hugging Face only if their capabilities fit the build. The T-Mobile challenge may already provide a baseline classifier and synthetic dataset, so extra model/API credits are optional.
 
 ### Offer ledger
 - **Deepspace:** $50 credit per participant; signup link with referral `HACKUTD2026`; available through Nov 18, 2026.
@@ -112,7 +112,7 @@ The team supplied HackUTD in-kind offer details. None have been redeemed yet. Fo
 
 The team asked what setup is needed to move beyond synthetic-only UI. Current official Photon Spectrum documentation confirms that project Settings provides a Project ID and Secret Key, and the SDK can read them from server environment variables. The browser-only prototype cannot safely use these credentials; a small `spectrum-ts` backend and one configured inbound message provider are needed.
 
-Important scope correction: Photon voice is SIP connected to an iMessage line. The docs state voice call events are not delivered in the normal `app.messages` stream or `app.webhook()`, and SDK call control and voice webhooks are coming soon. RTP audio is not encrypted. So SignalBridge should not promise voice-based scam detection or auto-hang-up. The first live test should be an opted-in teammate sending a harmless message to the configured line.
+Important scope correction: Photon voice is SIP connected to an iMessage line. The docs state voice call events are not delivered in the normal `app.messages` stream or `app.webhook()`, and SDK call control and voice webhooks are coming soon. RTP audio is not encrypted. So Pharos should not promise voice-based scam detection or auto-hang-up. The first live test should be an opted-in teammate sending a harmless message to the configured line.
 
 Setup notes and secret handling are documented in `Product/PHOTON_SETUP.md`; `.env.example` is ready, and `.gitignore` now excludes local `.env` secrets. Still need participant redemption/account/project setup and the T-Mobile sponsor's approved sample dataset/taxonomy/baseline instructions.
 
@@ -134,8 +134,8 @@ Git: the initial product source and logs are staged on `main`, but no commit/pus
 
 ## 2026-11-07 5:03 PM CST — Photon onboarding and push status
 
-For the Photon onboarding step shown in the team's screenshot, select SMS and Voice if both are available, then inspect the following page for a provisioned line/number, inbound/outbound support, SIP routing/voice-tool requirements, transcript access, webhook/call-control support, trial expiry, limits, and any paid renewal. Selecting Voice is not the same as giving SignalBridge a transcript stream.
+For the Photon onboarding step shown in the team's screenshot, select SMS and Voice if both are available, then inspect the following page for a provisioned line/number, inbound/outbound support, SIP routing/voice-tool requirements, transcript access, webhook/call-control support, trial expiry, limits, and any paid renewal. Selecting Voice is not the same as giving Pharos a transcript stream.
 
-Voice-content warnings are feasible if a SIP-connected voice app or STT tool creates a transcript. The warning should be shown in the SignalBridge UI or delivered as a follow-up message where supported; no arbitrary native phone-call overlay is implied. Phrase it as a possible scam pattern, cite the language evidence, and offer independent verification.
+Voice-content warnings are feasible if a SIP-connected voice app or STT tool creates a transcript. The warning should be shown in the Pharos UI or delivered as a follow-up message where supported; no arbitrary native phone-call overlay is implied. Phrase it as a possible scam pattern, cite the language evidence, and offer independent verification.
 
 Git push remains blocked by the invalid saved GitHub CLI token and unconnected GitHub integration; local `main` remains staged with no remote/commit. The user has now explicitly asked for assistant-driven pushes after the earlier request to avoid AI identities; no AI co-author/identity should be added. Reauthenticate/connect the team's account before creating the private `signalbridge-hackutd-2026` remote and pushing the reviewed initial set. Other HackUTD credits are optional; investigate Hugging Face only if a real transcription/model need remains after Safe Signal's sponsor materials arrive.

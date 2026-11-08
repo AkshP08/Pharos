@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0d121a" />
-    <title>About SignalBridge</title>
+    <title>About Pharos</title>
     <style>
       :root { color-scheme: dark; font: 16px/1.65 system-ui, sans-serif; background: #0d121a; color: #edf2f7; }
       body { max-width: 760px; margin: 0 auto; padding: 48px 24px 72px; }
@@ -17,15 +17,16 @@
     </style>
   </head>
   <body>
-    <p><a href="index.html">← Back to SignalBridge</a></p>
-    <h1>About SignalBridge</h1>
-    <p>SignalBridge is a HackUTD 2026 prototype for disaster-response support. It brings together a responder view of help requests and a way to review suspicious disaster-related messages.</p>
+    <p><a href="index.html">← Back to Pharos</a></p>
+    <h1>About Pharos</h1>
+    <p>Pharos is a HackUTD 2026 prototype for safer disaster support. <strong>Flare</strong> is the resident-facing experience for a help-request preview and suspicious-message check. <strong>Beacon</strong> is the responder-facing experience for a human-reviewed help queue and a separate suspicious-contact review.</p>
     <h2>What the demo shows</h2>
     <ul>
       <li>A queue that makes reported urgency clear and keeps missing details visible for human follow-up.</li>
       <li>Pressure Trace, which highlights message wording such as a false deadline, a demand for money or codes, or a request not to verify independently.</li>
+      <li>A corner guide that answers fixed questions about the prototype; it is not connected to a language model or live emergency services.</li>
     </ul>
-    <div class="note"><strong>Prototype limits:</strong> All examples are synthetic. This page is not connected to Photon messaging or calling, does not receive real emergency requests, does not identify a sender or prove a scam, and does not dispatch responders. A human must review every case and warning.</div>
+    <div class="note"><strong>Prototype limits:</strong> All examples are synthetic. Flare previews stay in the current browser page and are not sent to Beacon. This page is not connected to Photon messaging or calling, does not receive real emergency requests, does not identify a sender or prove a scam, and does not dispatch responders. A human must review every case and warning.</div>
     <p>The message checker looks only at wording. It does not analyze a caller’s voice, emotion, or identity. A warning means “verify this independently,” not “this is definitely a scam.”</p>
   </body>
 </html>

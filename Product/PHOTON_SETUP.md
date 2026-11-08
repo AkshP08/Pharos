@@ -1,8 +1,8 @@
-# Photon setup for SignalBridge
+# Photon setup for Pharos
 
 ## What Photon can power in this project
 
-The feasible first integration is an inbound **text-message** path into SignalBridge's server, followed by a safe reply or human-review prompt. The current `Product/` app is static, so it cannot safely hold Photon credentials; the integration needs a small server process using `spectrum-ts`.
+The feasible first integration is an inbound **text-message** path into Pharos's server, followed by a safe reply or human-review prompt. The current `Product/` app is static, so it cannot safely hold Photon credentials; the integration needs a small server process using `spectrum-ts`.
 
 Photon's current Spectrum docs describe providers for iMessage, WhatsApp Business, Telegram, and terminal development. The getting-started guide says a project needs a Project ID and Secret Key from project Settings. The SDK can read `SPECTRUM_PROJECT_ID` and `SPECTRUM_PROJECT_SECRET` from the server environment.
 
@@ -52,9 +52,13 @@ The endpoint is registered and OAuth is connected. A read-only `getCurrentOrgani
 - The billing overview shows no usage so far. It lists a **$2.00 pay-in-advance charge per US local number**; the number-purchase operation creates an SMS-enabled number. Carrier/message usage can add separate metered charges. No number has been purchased.
 - Voice remains unconfigured. A number purchase alone would not provide a transcript or complete the SIP/audio integration; confirm the voice setup and any costs separately before enabling it.
 
+The display name in Pharos is new, but the connected Photon Spectrum project still has the name **SignalBridge**. The local `Product/.env` file was checked on 2026-11-07 and is **not present**, so the website has no runtime Spectrum credentials. The connected Photon MCP is a developer-side control connection; it does not pass messages to the public site.
+
 ## Voice is an option, with a separate integration path
 
 The Photon onboarding screenshot shows Voice as a selectable channel. The official voice guide documents inbound and outbound calls over SIP using a Spectrum line, but says call events do not enter `app.messages` or `app.webhook()`, SDK call control and voice webhooks are still marked “coming soon,” and RTP audio on the SIP side is not encrypted. A separate SIP voice agent/tool could receive/process audio and produce a transcript if that tool supports it; Photon’s message SDK does not supply that transcript. We can analyze the transcript's language for possible pressure patterns, then show a brief warning in an interface we control. That warning cannot appear as an overlay on an arbitrary phone call unless the call is happening inside our own app/device UI. Do not send real voice or disaster-victim data through this prototype; test with a consenting teammate and harmless script first.
+
+The current proposed bridge is Photon SIP → LiveKit SIP ingress → LiveKit speech-to-text → a Safe Signal content check → Beacon review. This is an architecture proposal only: Photon-to-LiveKit routing and the team's LiveKit account have not been set up or verified. See [SYSTEM_PLAN.md](SYSTEM_PLAN.md) for the prerequisites and lower-scope audio-file transcription alternative.
 
 ## Other team inputs
 

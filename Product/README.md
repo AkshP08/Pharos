@@ -1,44 +1,36 @@
-# SignalBridge Product Prototype
+# Pharos Product Prototype
 
-SignalBridge is a synthetic-data prototype for the HackUTD 2026 State Farm, T-Mobile Safe Signal, and Photon challenges. It demonstrates two connected workflows:
+Pharos is a synthetic-data prototype for the HackUTD 2026 State Farm, T-Mobile Safe Signal, and Photon challenges. It has two audience experiences:
 
-## Project overview
+- **Pharos Flare — residents:** read a clearly labeled sample incident notice, make a local-only help-request preview, and check suspicious message wording.
+- **Pharos Beacon — responders:** review a sample needs queue, see why a case is suggested for follow-up, keep unknown details visible, and review suspicious contacts separately from help requests.
+- **Pharos Guide:** a fixed-answer website helper for prototype and message-safety questions. It is not connected to an AI model or live emergency services.
 
-During a disaster, responders need to understand who may need help soon, while residents may receive urgent messages that could be genuine warnings or attempts to exploit the emergency. SignalBridge is a response-desk prototype that supports both sides of that problem.
-
-- **Help-request queue:** Organizes residents’ self-reported requests by concrete facts such as rising water, inability to exit, injury, or dependence on powered medical equipment. Missing details stay visible for follow-up. A human responder reviews and can change the suggested order.
-- **Pressure Trace:** Highlights wording that can be used to manipulate people during a crisis, such as a made-up deadline, demands for money or verification codes, claimed authority, or instructions not to verify elsewhere. It shows the words that triggered a warning and suggests checking through a trusted source found independently.
-
-The goal is to help people verify suspicious messages and help response teams see reported needs clearly. A warning is not proof of a scam, and a queue position is not a dispatch decision.
-
-1. Organize help requests in a responder queue, showing which reported facts led to a suggested order and keeping incomplete requests visible for follow-up.
-2. Explain pressure tactics in a suspicious disaster-related message with a transparent **Pressure Trace** and a safe next step.
+The triage example is transparent and human-reviewed. It considers stated safety needs and resource constraints, not a resident's tone, persistence, or number of messages. A message warning is a prompt to verify independently, not proof of fraud or caller identity.
 
 ## Run it
 
-Open `index.html` in a modern browser. This first version is a static frontend and needs no package installation. All case and scam examples are fictional. The screen labels the Photon connection as unconfigured; it does not monitor real calls, send messages, or dispatch responders.
+Open `index.html` in a modern browser. This frontend needs no package installation. The form preview, message checker, and guide are local demo interactions; they do not send or store data. All incidents and messages are fictional.
 
-## Prototype boundaries
+## Current boundaries
 
-- The queue labels are demonstration categories, not a clinical triage standard.
-- The demo analyzer is a small transparent keyword/rule sketch. It is not a validated scam detector and does not identify a sender or determine intent.
-- The queue and analyzer use self-reported / synthetic inputs and require human review.
-- Photon API credentials and channel setup are not yet connected. Keep secrets out of frontend code; add a backend integration only after the team activates its Photon access and confirms the hackathon-supported channel.
+- Photon MCP is connected for developer-side operations. Photon is **not connected to the website at runtime**: the site has no Spectrum runtime credentials, provisioned line, webhook, live messages, or voice feed.
+- The DeepSpace deployment currently serves static files only. There is no database, real responder notification, or live warning source.
+- The queue is not a validated emergency triage standard. People and responders must use official local emergency procedures.
+- The message analyzer uses transparent demo rules. It cannot authenticate a sender or determine intent.
+- See [the system integration plan](SYSTEM_PLAN.md) for the API architecture, voice transcription choices, and exact setup needed before live data.
 
 ## Live demo hosting
 
-The current product is a static HTML/CSS/JavaScript demo, so it can be published without a backend. Photon is the messaging API, not the website host; its $100 organization credit is separate from hosting credits.
+The product is currently live at [signalbridge-hackutd-2026.app.space](https://signalbridge-hackutd-2026.app.space). The public URL and private GitHub repository slug still use the former SignalBridge name; the app itself is being renamed Pharos. The source is in the private [GitHub repository](https://github.com/AkshP08/signalbridge-hackutd-2026), with commits and pushes under the student's account.
 
-The static-only DeepSpace wrapper builds the current Product files into a deployable site. The app is live at [signalbridge-hackutd-2026.app.space](https://signalbridge-hackutd-2026.app.space). Source is in the private [SignalBridge GitHub repository](https://github.com/AkshP08/signalbridge-hackutd-2026), with commits and pushes under the student's account.
+The hosted page currently contains fictional examples only. See [DeepSpace deployment](https://docs.deep.space/concepts/deployment).
 
-The hosted page contains fictional examples only; it does not connect to Photon, receive real calls or messages, or process emergency data. See [DeepSpace deployment](https://docs.deep.space/concepts/deployment) and [Lovable publishing overview](https://lovable.dev/guides/build-database-app-without-coding).
+## Project files
 
-We used DeepSpace for hosting. Vercel's Drop page led to a Pro trial checkout with a card requirement; we closed it before starting the trial or uploading the project.
-
-## Files
-
-- `index.html` — app structure and synthetic scenario.
-- `styles.css` — responsive visual system.
-- `app.js` — queue interactions and prototype Pressure Trace behavior.
+- `index.html` — app structure and Flare/Beacon experiences.
+- `styles.css` — responsive visual system and corner guide.
+- `app.js` — local demo interactions, message checks, and fixed-answer guide.
 - `PROJECT_LOG.md` — dated decisions, blockers, workarounds, milestones, and screenshot links.
-- `PHOTON_SETUP.md` — current Photon credential setup, supported integration scope, and sponsor inputs needed.
+- `PHOTON_SETUP.md` — current Photon status and setup notes.
+- `SYSTEM_PLAN.md` — integration architecture and required participant/sponsor inputs.

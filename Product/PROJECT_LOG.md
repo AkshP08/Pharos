@@ -185,3 +185,29 @@ Append a dated note after each meaningful implementation session. Include what c
 - Release identifier: `rel_01M6W9E3DSKP6E4WZWATR83Z0Z`. DeepSpace's CLI notes that GitHub-source releases record branch/dirty status but no commit lineage; the source remains available on the pushed `main` branch.
 - This hosting milestone publishes only the static synthetic prototype. The queue and Pressure Trace are demo logic; Photon is not connected to the deployed app and no calls, messages, or resident details are processed.
 - Visual check: opened the live Response Desk in Chrome and confirmed the incident queue, human-review language, synthetic message example, and “Demo mode · No live Photon data” footer are visible. The screenshot was shown in the progress conversation; the saved setup screenshot remains [Photon channel selection](screenshots/photon-channel-selection-2026-11-07-1646.png).
+
+## 2026-11-07 6:56 PM CST — Pharos two-audience prototype and integration plan
+
+### Product decisions
+- Renamed the visible product from SignalBridge to **Pharos**. The two experiences are **Flare** for residents and **Beacon** for responders. The previous hosted URL, Photon project, and GitHub repository still have SignalBridge in their identifiers.
+- Chose **Beacon** over “Radar” for responders: it describes guiding a response without suggesting broad surveillance. Flare is the resident's signal for help.
+- Kept resident-reported needs in a separate intake flow. Beacon shows help requests separately from suspicious-message review, so an anti-scam flag cannot suppress a person asking for help.
+- Triage stays self-reported, fact-based, explainable, and human-reviewed. Unknown details remain visible for follow-up. Message volume, insistence, accent, and perceived emotion must not affect priority.
+
+### Work completed
+- Added a Beacon/Flare audience switch to the web prototype.
+- Added a synthetic incident notice and a resident form preview for safety status, landmark/location, people affected, requested supports, and optional detail. It stays in browser memory only and sends nothing to a server.
+- Added a Flare-side demo message check and a floating crown-avatar **Pharos Guide**. The Guide uses fixed local answers; it is not an LLM and it cannot see live warnings or contact responders.
+- Rebranded the page, About page, and Product README. Updated Photon notes to clarify the connected Photon developer control plane does not supply runtime credentials to the website.
+- Added [SYSTEM_PLAN.md](SYSTEM_PLAN.md) with the current integration map, triage principles, voice transcript proposal, privacy boundaries, and exact team inputs needed.
+- Proposed LiveKit SIP ingress plus speech-to-text (Deepgram-backed LiveKit inference) as a possible voice bridge, pending Photon route compatibility and a consenting synthetic call. A small audio-file transcription through Hugging Face is the lower-scope fallback. Neither route is connected yet.
+
+### Build and constraints
+- `npm run build` completed successfully. Wrangler again printed a non-fatal `EPERM` while trying to write its local debug log under the user's Library folder.
+- The build reported using the ignored local `.dev.vars`; its contents were not inspected or printed. The final `dist/` tree was checked by filename and contains static assets and the worker bundle, with no `.dev.vars` file in the output. `Product/.env` is absent, so no Photon Spectrum runtime credentials are available locally.
+- A local `file://` browser preview was rejected by Chrome's security policy. The changed build has not yet been visually verified in a browser; capture the live HTTPS view after the authorized push/redeploy.
+- No SMS number was purchased and no real call/message/request data was accessed. The previous selection to keep using simulated data still applies until the team explicitly changes that decision for any paid provisioning.
+
+### Screenshot checkpoint
+- Existing setup screenshot: [Photon's channel picker](screenshots/photon-channel-selection-2026-11-07-1646.png).
+- New Pharos UI screenshot: pending live HTTPS redeploy and visual review.

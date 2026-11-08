@@ -47,6 +47,23 @@ let toastTimer;
 let activeFilter = 'all';
 let activeCaseIndex = 0;
 
+function setAudience(audience) {
+  const isFlare = audience === 'flare';
+  document.querySelector('#flareView').hidden = !isFlare;
+  document.querySelector('#beaconView').hidden = isFlare;
+  document.querySelector('#flareModeButton').classList.toggle('selected', isFlare);
+  document.querySelector('#flareModeButton').setAttribute('aria-pressed', String(isFlare));
+  document.querySelector('#beaconModeButton').classList.toggle('selected', !isFlare);
+  document.querySelector('#beaconModeButton').setAttribute('aria-pressed', String(!isFlare));
+  document.body.classList.toggle('flare-mode', isFlare);
+  document.querySelector('#breadcrumbSection').textContent = isFlare ? 'Pharos' : 'Incidents';
+  document.querySelector('#breadcrumbCurrent').textContent = isFlare ? 'Flare · Resident support' : 'Trinity River flooding';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.querySelector('#flareModeButton').addEventListener('click', () => setAudience('flare'));
+document.querySelector('#beaconModeButton').addEventListener('click', () => setAudience('beacon'));
+
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add('show');
@@ -170,6 +187,92 @@ document.querySelector('#analyzeButton').addEventListener('click', () => {
     : '<li>No strong pressure pattern found in this simple demo check. The sender is still unverified.</li>';
   output.className = `analysis-output visible ${result.level}`;
   output.innerHTML = `<strong>${result.headline}</strong><ul>${signalSummary}</ul><span>${result.caveat}</span>`;
+});
+
+document.querySelector('#residentAnalyzeButton').addEventListener('click', () => {
+  const input = document.querySelector('#residentMessage').value.trim();
+  const output = document.querySelector('#residentAnalysis');
+  if (!input) {
+    output.className = 'analysis-output visible medium';
+    output.textContent = 'Add a fictional message to review. Do not paste a real conversation.';
+    return;
+  }
+  const result = analyzeMessage(input);
+  const signalSummary = result.signals.length
+    ? result.signals.map((signal) => `<li><strong>${escapeHtml(signal.name)}</strong> — ${escapeHtml(signal.note)}</li>`).join('')
+    : '<li>No strong pressure pattern found in this simple demo check. The sender is still unverified.</li>';
+  output.className = `analysis-output visible ${result.level}`;
+  output.innerHTML = `<strong>${result.headline}</strong><ul>${signalSummary}</ul><span>${result.caveat}</span>`;
+});
+
+document.querySelector('#helpRequestForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const needs = form.getAll('need');
+  const location = String(form.get('locationHint') || '').trim() || 'Not provided — follow-up needed';
+  const statusMap = { yes: 'Immediate danger reported', no: 'No immediate danger reported', 'not-sure': 'Immediate danger not confirmed — follow-up needed' };
+  const count = form.get('peopleCount') === 'unknown' ? 'Not provided' : form.get('peopleCount');
+  const detail = document.querySelector('#helpDetails').value.trim();
+  const preview = document.querySelector('#requestPreview');
+  const previewLines = [
+    `<li><strong>Safety:</strong> ${escapeHtml(statusMap[form.get('safetyStatus')])}</li>`,
+    `<li><strong>Location:</strong> ${escapeHtml(location)}</li>`,
+    `<li><strong>People:</strong> ${escapeHtml(String(count))}</li>`,
+    `<li><strong>Needs:</strong> ${needs.length ? needs.map(escapeHtml).join(', ') : 'Not selected — follow-up needed'}</li>`,
+  ];
+  if (detail) previewLines.push(`<li><strong>Extra detail:</strong> ${escapeHtml(detail)}</li>`);
+  preview.className = 'request-preview visible';
+  preview.innerHTML = `<strong>Demo request preview · not sent</strong><ul>${previewLines.join('')}</ul><span>Beacon is not connected to this form. In a real system, missing answers would stay visible for a responder to clarify; the resident’s tone or insistence would not change priority.</span>`;
+  preview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
+
+const guideAnswers = [
+  { match: /help|request|flare|submit/i, answer: 'Flare is the resident demo. Share only what is needed: immediate safety, a nearby location or landmark, number of people, and requested help. This prototype only creates a local preview; it does not send a request. If someone is in immediate danger, contact the local emergency number.' },
+  { match: /warning|real|scam|message|verify/i, answer: 'This demo cannot verify a sender or check live emergency alerts. It can point out wording such as payment demands, secrecy, or rushed deadlines. Don’t use a suspicious message’s links or phone numbers; verify through an official source you find independently.' },
+  { match: /beacon|responder|triage|queue|priority/i, answer: 'Beacon is the responder demo. It organizes reported needs using stated safety facts, keeps unknown details visible for follow-up, and shows suspicious contacts separately from help requests. A human responder reviews the queue; the demo does not dispatch anyone.' },
+  { match: /voice|call|photon|transcript/i, answer: 'Photon is not connected to live calls in this demo. A future voice path needs a supported SIP route, a speech-to-text service, consent and retention rules, and a server-side connection. A transcript could be checked for risky requests, but it cannot prove a caller is a scammer.' },
+  { match: /data|private|store|send/i, answer: 'This prototype uses fictional examples. Flare request previews and message checks stay in this page and are not sent or saved. Please do not enter real names, contact details, health information, or emergency details.' },
+];
+
+function appendGuideMessage(text, role) {
+  const message = document.createElement('p');
+  message.className = `guide-bubble ${role === 'user' ? 'guide-user' : 'guide-bot'}`;
+  message.textContent = text;
+  const messages = document.querySelector('#guideMessages');
+  messages.append(message);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function answerGuide(question) {
+  const match = guideAnswers.find((entry) => entry.match.test(question));
+  return match ? match.answer : 'I can explain Flare, Beacon, suspicious message wording, or the planned Photon voice path. I cannot check a live warning, send help, give medical advice, or contact responders.';
+}
+
+function askGuide(question) {
+  const cleanQuestion = question.trim().slice(0, 240);
+  if (!cleanQuestion) return;
+  appendGuideMessage(cleanQuestion, 'user');
+  appendGuideMessage(answerGuide(cleanQuestion), 'bot');
+}
+
+document.querySelector('#guideLauncher').addEventListener('click', () => {
+  const panel = document.querySelector('#guidePanel');
+  const open = panel.hidden;
+  panel.hidden = !open;
+  document.querySelector('#guideLauncher').setAttribute('aria-expanded', String(open));
+  if (open) document.querySelector('#guideInput').focus();
+});
+document.querySelector('#guideClose').addEventListener('click', () => {
+  document.querySelector('#guidePanel').hidden = true;
+  document.querySelector('#guideLauncher').setAttribute('aria-expanded', 'false');
+  document.querySelector('#guideLauncher').focus();
+});
+document.querySelectorAll('.guide-topics button').forEach((button) => button.addEventListener('click', () => askGuide(button.dataset.question)));
+document.querySelector('#guideForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const input = document.querySelector('#guideInput');
+  askGuide(input.value);
+  input.value = '';
 });
 
 document.querySelectorAll('.nav-link[href^="#"]').forEach((link) => link.addEventListener('click', (event) => {

@@ -586,3 +586,10 @@ Append a dated note after each meaningful implementation session. Include what c
 - New timeline118seconds, native1080p,30fps H.264CRF17/AAC160k; output about9MiB. No image scaling or letterboxing. Local preview initially failed because Miniflare needed the host checkout as cwd; the same compiled Worker passed backend tests and preview started from that directory. Media decode and hosted player/source checks follow publication.
 
 - Refined the call segment further: staged only the specifically publication-approved saved call/case snapshot in the isolated viewer, unchanged. Re-recorded Calls and linked-request navigation with a single clean call page, excluding all unrelated callers and competing synthetic call cards. Page/storyboard disclose this presentation copy; original audio remains real.
+
+## November 8, 2026 — Donald: replace approved demo caller
+
+- User requested replacing the permitted caller with their specified test phone. Updated only `PHAROS_TEST_CALLER_NUMBERS` in the two ignored, owner-only local/hosted configuration files; personal number and credentials remain outside Git.
+- Checked that no LiveKit rooms were active before restarting. Updated the existing owned inbound SIP trunk's allowed-number field only, then re-read it and verified exactly one approved caller. Preserved hotline, credentials, dispatch, call caps, and all stored cases; no number/resource was purchased and no test call was placed.
+- Applied the caller-only hosted secret to the existing `pharos-intake` agent. CLI update succeeded; subsequent status confirmed the existing deployment remains enabled at version WXTAmKeABkW3 and is Sleeping (cold start possible), rather than claiming a newly answered call was verified.
+- Validation: local intake configuration check passed, 9 inbound setup tests and 3 hosted secret tests passed, and Git ignores both private configuration files. Documented the two admission gates so future changes update SIP and agent settings together. Committing the operational record; configuration itself intentionally remains private. Real call from the newly selected phone remains a manual check.

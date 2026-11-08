@@ -14,6 +14,8 @@ Ordinary LiveKit URLs require `wss://`. Hosted LiveKit injects an HTTPS gateway 
 
 `PHAROS_TEST_CALLER_NUMBERS` admits only consenting test phones and limits billing exposure; it is not a fraud signal. `PHAROS_CALL_MODE=intake` is the current mode. Keep `PHAROS_ENABLE_GUARD_RELAY=false` and `PHAROS_ALLOW_BROWSER_TESTS=false` outside a deliberately bounded private synthetic test. The current call cap is 180 seconds; phone legs are removed before slower finalization/audio upload.
 
+Changing approved callers requires both gates to match: update `PHAROS_TEST_CALLER_NUMBERS` in the ignored local/hosted settings, synchronize the existing owned SIP trunk with `setup_inbound.py --number <existing-hotline> --apply --sync-test-callers`, and apply the hosted caller secret with `lk agent update-secrets`. Secret updates restart the agent; wait for active calls to finish first. Keep personal numbers and generated secrets out of Git, verify the trunk's exact allowed-number set, and inspect hosted deployment status afterward. This does not change the hotline number or require a website deployment.
+
 ## Consent and audio
 
 The opening briefly asks to share a transcript and caller audio, with **yes**, **transcript only**, and **no** choices. Transcript-only consent keeps audio disabled and preserves help facts. Explicit no-audio qualifications override a general yes. Clear sharing withdrawal closes local collection before the withdrawal text reaches the saved transcript/model and asks the backend to scrub relevant retained evidence. Do not promise deletion from external provider processing.

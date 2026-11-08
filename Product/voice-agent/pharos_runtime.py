@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import logging
 import re
@@ -27,37 +28,120 @@ class DeliveryError(RuntimeError):
 class ConsentAnswer:
     decision: bool | None
     remainder: str = ""
+    audio_consent: bool = False
+
+
+def _consent_text(text: str) -> tuple[str, str]:
+    value = re.sub(r"\s+", " ", text.replace("’", "'").replace("‘", "'")
+                   .replace("“", '"').replace("”", '"')).strip()
+    # A standalone quoted command is still a caller request. Attributed quoted
+    # speech is masked, preserving offsets so facts can be kept unchanged.
+    if len(value) > 1 and value[0] == value[-1] == '"' and value.count('"') == 2:
+        value = value[1:-1].strip()
+    masked = re.sub(r'"[^"\n]*"|(?<!\w)\'[^\n]*?\'(?!\w)', lambda match: " " * len(match[0]), value)
+    masked = re.sub(
+        r"\b(?:he|she|they|(?:the|my|our) (?:scammer|caller|attacker|person))\s+"
+        r"(?:said|says|told me|told us|asked me|asked us)\b.*?(?=\bbut\b|[.!?;]|$)",
+        lambda match: " " * len(match[0]), masked, flags=re.I,
+    )
+    return value, masked
+
+
+_REQUEST_PREFIX = (
+    r"(?:(?:please|(?:can|could|would|will) you(?: please)?|"
+    r"(?:i|we) (?:want|need|ask) you to|(?:i'd|we'd) like you to)\s+)?"
+)
+_CLAUSE_START = r"(?:^|[.!?;,]\s*|\b(?:but|however)\s+)"
+_STOP_SHARING = (
+    _REQUEST_PREFIX + r"(?:stop|quit|end|pause)\s+"
+    r"(?:(?:the|this|my|our|call|audio|voice)\s+){0,3}"
+    r"(?:recording|transcribing|transcription|saving|storing|monitoring|screening|sharing)\b"
+)
+_DONT_SHARE = _REQUEST_PREFIX + r"(?:do not|don't)\s+(?:record|transcribe|save|store|share)\b"
+_NEGATED_AUDIO = (
+    r"(?:i|we)\s+(?:do not|don't)\s+(?:want|allow|agree to|consent to)\s+"
+    r"(?:you to\s+)?(?:(?:any|the|this|my|our|call)\s+)*"
+    r"(?:(?:audio|recordings?|voice)\b(?:\s+(?:being\s+)?(?:recorded|saved|stored|shared))?"
+    r"|(?:to be|being)\s+recorded\b|(?:record|save|store|share)\s+(?:audio|my voice|our voice|the audio|the call|me|us)\b)"
+)
+_AUDIO_ONLY_REQUEST = (
+    r"(?:please\s+)?(?:no|without|not the)\s+(?:call\s+)?(?:audio|recording)\b"
+    r"|(?:(?:i|we)\s+(?:want|prefer)\s+)?(?:(?:transcript|text)[ -]+only|"
+    r"(?:only|just)\s+(?:(?:the|a)\s+)?(?:transcript|text))\b"
+)
 
 
 def is_consent_withdrawal(text: str) -> bool:
-    """Recognize explicit stop requests before persisting the request itself."""
-    value = re.sub(r"\s+", " ", text.replace("’", "'")).strip()
+    """Recognize caller stop requests, including polite forms, before persistence."""
+    _, value = _consent_text(text)
     return bool(re.search(
-        r"(?:^|[.!?;]\s*)(?:please\s+)?(?:stop|quit|end)\s+(?:recording|transcribing|transcription|saving|storing|monitoring|screening)\b"
-        r"|\b(?:i|we)\s+(?:withdraw|revoke|cancel)\s+(?:(?:my|our|the)\s+)?consent\b"
-        r"|\b(?:i|we)\s+(?:do not|don't|no longer)\s+(?:agree|consent)\b"
-        r"|(?:^|[.!?;,]\s*)(?:please\s+)?(?:do not|don't)\s+(?:record|transcribe|save|store)\b",
+        _CLAUSE_START + r"(?:" + _STOP_SHARING + r"|" + _DONT_SHARE
+        + r"|(?:i|we)\s+(?:withdraw|revoke|cancel)\s+(?:(?:my|our|the)\s+)?consent\b"
+        r"|(?:i|we)\s+(?:do not|don't|no longer)\s+(?:agree|consent)\b(?!\s+with\b)"
+        r"|" + _NEGATED_AUDIO + r"|" + _AUDIO_ONLY_REQUEST + r")",
         value, re.I,
     ))
 
 
 def parse_consent(text: str) -> ConsentAnswer:
     """Separate uncertainty about agreement from uncertain need/location facts."""
-    normalized = re.sub(r"\s+", " ", text.replace("’", "'")).strip()
-    if is_consent_withdrawal(normalized):
+    normalized, masked = _consent_text(text)
+    if re.match(r"^(?:(?:no|nope)\b(?!\s+(?:audio|recording)\b)|i decline\b|i refuse\b)", masked, re.I):
         return ConsentAnswer(False)
-    if re.match(r"^(?:no|nope|stop|i decline|i refuse)\b", normalized, re.I):
+    text_only_pattern = r"(?:\bto\s+)?\b(?:(?:transcript|text)[ -]+only|(?:only|just)\s+(?:(?:the|a)\s+)?(?:transcript|text))\b"
+    text_only = list(re.finditer(text_only_pattern, masked, re.I))
+    audio_limits = list(re.finditer(
+        r"\b(?:no|without|not)\s+(?:the\s+)?(?:(?:call|voice)\s+)?(?:audio(?:\s+recording)?|recordings?)\b"
+        r"|\b(?:audio|recording)\s+(?:off|disabled|not allowed)\b"
+        r"|\baudio\s+(?:is\s+)?not\s+(?:okay|ok|allowed|permitted)\b|\b" + _NEGATED_AUDIO,
+        masked, re.I,
+    ))
+    # Direct stop/don't-record commands still withdraw all sharing unless an
+    # explicit transcript-only permission narrows that command to audio.
+    permission_spans = text_only + audio_limits
+    if text_only:
+        permission_spans += list(re.finditer(
+            _CLAUSE_START + r"(?:" + _REQUEST_PREFIX + r"(?:stop|quit|end|pause)\s+(?:the\s+)?recording\b"
+            r"|" + _REQUEST_PREFIX + r"(?:do not|don't)\s+record\b(?:\s+(?:me|us|the call|my voice))?)",
+            masked, re.I,
+        ))
+    restricted = list(masked)
+    kept = list(normalized)
+    for item in permission_spans:
+        restricted[item.start():item.end()] = " " * (item.end() - item.start())
+        kept[item.start():item.end()] = " " * (item.end() - item.start())
+    restricted_text = "".join(restricted)
+    if is_consent_withdrawal(restricted_text):
         return ConsentAnswer(False)
-    match = re.match(r"^(?:(?:yes|yeah|yep)\b[\s,!.;-]*(?:i (?:agree|consent)\b[\s,!.;-]*)?|i (?:agree|consent)\b[\s,!.;-]*)(.*)$", normalized, re.I)
-    if not match:
+    match = re.match(r"^(?:(?:yes|yeah|yep)\b[\s,!.;-]*(?:i (?:agree|consent)\b[\s,!.;-]*)?|i (?:agree|consent)\b[\s,!.;-]*)", masked, re.I)
+    standalone_text_only = text_only and re.match(
+        r"^(?:(?:please|no audio(?: please)?)[\s,!.;-]*)?(?:(?:transcript|text)[ -]+only|(?:only|just)\s+(?:(?:the|a)\s+)?(?:transcript|text))\b",
+        masked, re.I,
+    )
+    if not match and not standalone_text_only:
+        if audio_limits:
+            # Refusing audio alone is not affirmative transcript permission and
+            # does not mean the caller is declining help. Ask for clarification.
+            return ConsentAnswer(None)
+        if is_consent_withdrawal(masked) or re.match(r"^stop\b", masked, re.I):
+            return ConsentAnswer(False)
         return ConsentAnswer(None)
-    remainder = match[1].strip(" ,!.;-")
+    remainder = "".join(kept)[match.end() if match else 0:].strip(" ,!.;-")
+    if permission_spans:
+        remainder = re.sub(r"^(?:(?:but|and|to|please)\b[\s,!.;-]*)+", "", remainder, flags=re.I)
+        remainder = re.sub(r"\bplease[\s,!.;-]*$", "", remainder, flags=re.I).strip(" ,!.;-")
+        remainder = re.sub(r"\s{2,}", " ", remainder)
     if (re.fullmatch(r"(?:no|nope)[\s,!.;-]*(?:stop)?", remainder, re.I)
             or re.match(r"^(?:but|if|unless|provided|only if)\b", remainder, re.I)
             or re.fullmatch(r"(?:maybe|not sure|unsure|i (?:do not|don't) know)", remainder, re.I)
             or re.search(r"\b(?:maybe|not sure|unsure)\b.{0,30}\b(?:consent|agree|recording|transcription|sharing)\b", remainder, re.I)):
         return ConsentAnswer(None)
-    return ConsentAnswer(True, remainder)
+    if not permission_spans and re.search(
+        r"\b(?:maybe|not sure|unsure|don't know|do not know)\b.{0,40}\b(?:audio|recordings?)\b"
+        r"|\b(?:audio|recordings?)\b.{0,40}\b(?:maybe|not sure|unsure|don't know|do not know)\b", remainder, re.I,
+    ):
+        return ConsentAnswer(None)
+    return ConsentAnswer(True, remainder, not bool(permission_spans))
 
 
 @dataclass(frozen=True)
@@ -247,16 +331,53 @@ class VoiceEventClient:
             await self.sleep(min(0.25 * (2 ** attempt), 2.0))
         raise DeliveryError("Responder progress exhausted its retry budget")
 
+    async def _audio_post(self, call_id: str, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+        for attempt in range(self.attempts):
+            try:
+                response = await self.client.post(
+                    f"{self.api_url}/api/voice/calls/{quote(call_id, safe='')}/audio/{endpoint}",
+                    headers={"Authorization": f"Bearer {self.token}"}, json=payload,
+                )
+            except httpx.TransportError:
+                retryable, status = True, "network"
+            else:
+                if 200 <= response.status_code < 300:
+                    try:
+                        result = response.json()
+                    except ValueError:
+                        raise DeliveryError("Audio storage returned invalid data") from None
+                    if (not isinstance(result, dict) or result.get("accepted") is not True
+                            or any(key in result and type(result[key]) is not bool for key in ("duplicate", "discarded"))):
+                        raise DeliveryError("Audio storage was not acknowledged")
+                    return {key: result[key] for key in ("accepted", "duplicate", "discarded") if key in result}
+                status = str(response.status_code)
+                retryable = response.status_code in {408, 425, 429} or response.status_code >= 500
+            if not retryable or attempt + 1 == self.attempts:
+                raise DeliveryError(f"Audio storage unavailable (status {status})") from None
+            logger.warning("Audio storage will retry; attempt=%d status=%s", attempt + 1, status)
+            await self.sleep(min(0.25 * (2 ** attempt), 2.0))
+        raise DeliveryError("Audio storage exhausted its retry budget")
+
+    async def audio_chunk(self, call_id: str, sequence: int, pcm: bytes) -> dict[str, Any]:
+        if type(sequence) is not int or not 0 <= sequence < 88 or not pcm or len(pcm) > 65536 or len(pcm) % 2:
+            raise DeliveryError("Invalid bounded audio chunk")
+        return await self._audio_post(call_id, "chunks", {"sequence": sequence, "pcmBase64": base64.b64encode(pcm).decode("ascii")})
+
+    async def audio_complete(self, call_id: str, last_sequence: int) -> dict[str, Any]:
+        if type(last_sequence) is not int or not 0 <= last_sequence < 88:
+            raise DeliveryError("Invalid audio completion sequence")
+        return await self._audio_post(call_id, "complete", {"lastSequence": last_sequence})
+
 
 WarningCallback = Callable[[dict[str, Any]], Awaitable[None]]
 ProgressCallback = Callable[[dict[str, Any]], Awaitable[bool]]
 ReviewerFactory = Callable[[], Any]
 
 
-def _semantic_reviewer() -> Any:
-    # Intake and old/mock runtimes never import inference for this feature.
+def _semantic_reviewer(*, context: str = "guard") -> Any:
+    # The inference module stays lazy until an acknowledged consented turn.
     from pharos_semantic import SemanticReviewer
-    return SemanticReviewer()
+    return SemanticReviewer(context=context)
 
 
 class CallEventStream:
@@ -266,6 +387,7 @@ class CallEventStream:
                  caller_number: str | None = None, semantic_review: bool = False,
                  reviewer_factory: ReviewerFactory | None = None,
                  on_progress: ProgressCallback | None = None,
+                 on_audio_consent: Callable[[bool], None] | None = None,
                  progress_interval: float = 3.0,
                  progress_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep):
         self.client = client
@@ -280,6 +402,8 @@ class CallEventStream:
         self._started = False
         self.on_warning = on_warning
         self.consented = False
+        self.audio_consented = False
+        self.on_audio_consent = on_audio_consent
         self.declined = False
         self.sequence = 0
         self.closed = False
@@ -290,8 +414,9 @@ class CallEventStream:
         self.delivery_failed = False
         self.revoked = False
         self._revocation_task: asyncio.Task[dict[str, Any]] | None = None
-        self.semantic_review = purpose == "guard" and semantic_review
-        self._reviewer_factory = reviewer_factory or _semantic_reviewer
+        self.semantic_review = purpose in {"intake", "guard"} and semantic_review
+        self._reviewer_factory = reviewer_factory or (
+            lambda: _semantic_reviewer(context="responder" if purpose == "intake" else "guard"))
         self._semantic_reviewer: Any = None
         self._semantic_task: asyncio.Task[None] | None = None
         self._semantic_close_task: asyncio.Task[None] | None = None
@@ -511,12 +636,21 @@ class CallEventStream:
         task.add_done_callback(observe)
         return task
 
-    async def consent(self, value: bool) -> None:
+    async def consent(self, value: bool, *, audio_consent: bool = False) -> None:
         if self.closed or self.consented or self.declined:
             return
-        await self.enqueue("consent", consent=value)
+        await self.enqueue("consent", consent=value, audioConsent=value and audio_consent)
+        if self.revoked or self.closed:
+            return
         self.consented = value
         self.declined = not value
+        self.audio_consented = value and audio_consent
+        if self.on_audio_consent is not None:
+            try:
+                self.on_audio_consent(self.audio_consented)
+            except Exception:
+                self.audio_consented = False
+                logger.error("Consented caller audio could not start")
 
     def turn(self, role: str, text: str) -> asyncio.Task[dict[str, Any]] | None:
         if not self.consented or self.closed or self.declined or not text.strip():
@@ -533,6 +667,12 @@ class CallEventStream:
         # Close the local gate synchronously, including final-transcript callbacks.
         self.revoked = True
         self.consented = False
+        self.audio_consented = False
+        if self.on_audio_consent is not None:
+            try:
+                self.on_audio_consent(False)
+            except Exception:
+                logger.error("Caller audio stop callback unavailable")
         self.declined = True
         self.closed = True
         self.warning_url = None

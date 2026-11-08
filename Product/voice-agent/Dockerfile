@@ -16,8 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Explicit source list plus .dockerignore prevents local secrets/test data from
 # entering either the build context or the runtime image.
-COPY --chown=appuser:appuser agent.py pharos_runtime.py pharos_semantic.py ./
-RUN python -m compileall -q agent.py pharos_runtime.py pharos_semantic.py
+COPY --chown=appuser:appuser agent.py pharos_runtime.py pharos_semantic.py pharos_audio.py ./
+RUN python -m compileall -q agent.py pharos_runtime.py pharos_semantic.py pharos_audio.py
 
 USER appuser
 EXPOSE 8081

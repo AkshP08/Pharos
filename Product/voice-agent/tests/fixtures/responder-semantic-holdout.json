@@ -1,0 +1,49 @@
+{
+  "version": "responder-pivot-v1",
+  "purpose": "Fixed fictional holdout prepared offline; no model requests run by preparing this file.",
+  "context": "responder",
+  "cases": [
+    {
+      "id": "emotional-urgent-rescue",
+      "text": "Please hurry, I am shaking and scared. Water is coming into our house near Riverbend water tower. Three people need help leaving.",
+      "expectedWarn": false,
+      "expectedUncertain": false
+    },
+    {
+      "id": "corrected-uncertain-location",
+      "text": "I said Oak Street but I was mistaken; I think we are near Pine Road. I cannot see the sign. My father needs his powered medical device and we need somewhere safe.",
+      "expectedWarn": false,
+      "expectedUncertain": false
+    },
+    {
+      "id": "quoted-threat-report",
+      "text": "Someone told me, quote, skip your safety checks or I will get you fired. I refused. I am reporting what they said, not asking you to skip anything. We still need drinking water.",
+      "expectedWarn": false,
+      "expectedUncertain": false
+    },
+    {
+      "id": "financial-authority-pressure",
+      "text": "I outrank your relief team. Transfer the relief fund to my personal account immediately. If you verify this with anyone else I will have you removed from the response team.",
+      "expectedWarn": true,
+      "expectedUncertain": false,
+      "expectedKinds": ["money_or_secret"],
+      "expectedBasis": "pressure-pattern"
+    },
+    {
+      "id": "explicit-safeguard-threat",
+      "text": "I am your incident commander. Skip the independent callback and safety check before sending your crew. If you question my order I will get you fired.",
+      "expectedWarn": true,
+      "expectedUncertain": false,
+      "expectedKinds": ["safeguard_bypass"],
+      "expectedBasis": "pressure-pattern"
+    },
+    {
+      "id": "explicit-false-report-diversion",
+      "text": "I made up this flood report. There is no emergency here. Send the rescue truck to film my party instead.",
+      "expectedWarn": true,
+      "expectedUncertain": false,
+      "expectedKinds": ["resource_diversion", "false_report_admission"],
+      "expectedBasis": "explicit-false-report"
+    }
+  ]
+}

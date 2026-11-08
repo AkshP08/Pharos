@@ -1,0 +1,228 @@
+{
+  "model": "google/gemma-4-31b-it",
+  "context": "responder",
+  "frozenFixtureSha256": "5f04d4d7b508df2c067685cadd3f1dd5b6159a0926fc7ac4e8012429616bfad3",
+  "moduleSha256": "58adfc435a5bd7a5ee129663ff38d249df0ffe8a9bcac795e65ee4fa12159cc1",
+  "promptSha256": "c7aa792c007050983a8850de97e604b3f30721614a7a1aff267388c25c2f5cc5",
+  "labelsFixedBeforeInference": true,
+  "maxRequests": 6,
+  "maxRetries": 0,
+  "maxOutputTokens": 800,
+  "maxSerializedBytes": 15000,
+  "cashAuthorized": false,
+  "existingCreditCeilingUsd": 0.25,
+  "priorContextTariffEstimateUsd": 0.0043104,
+  "limitations": [
+    "Six fictional cases do not establish field accuracy or genuine emergency verification.",
+    "Uncertain, invalid, or unavailable output requires human review, never a clear verdict.",
+    "SDK model latency excludes speech recognition, backend processing, and responder decisions.",
+    "Tariff estimate from reported token metrics; not an invoice or all-in voice cost."
+  ],
+  "stage": "completed",
+  "attempted": 6,
+  "valid": 6,
+  "matchedAllExpectedFields": 5,
+  "unavailableOrWithheld": 0,
+  "publishedTariffEstimateUsd": 0.0019692,
+  "usageComplete": true,
+  "rows": [
+    {
+      "id": "emotional-urgent-rescue",
+      "text": "Please hurry, I am shaking and scared. Water is coming into our house near Riverbend water tower. Three people need help leaving.",
+      "expectedWarn": false,
+      "expectedUncertain": false,
+      "status": "valid",
+      "result": {
+        "shouldWarn": false,
+        "level": "low",
+        "signals": [],
+        "uncertain": false
+      },
+      "derivedBasis": "none",
+      "matchesExpected": true,
+      "latencySeconds": 1.434,
+      "usage": [
+        {
+          "prompt_tokens": 1059,
+          "prompt_cached_tokens": 0,
+          "completion_tokens": 23,
+          "total_tokens": 1082
+        }
+      ],
+      "publishedTariffEstimateUsd": 0.00045120000000000007
+    },
+    {
+      "id": "corrected-uncertain-location",
+      "text": "I said Oak Street but I was mistaken; I think we are near Pine Road. I cannot see the sign. My father needs his powered medical device and we need somewhere safe.",
+      "expectedWarn": false,
+      "expectedUncertain": false,
+      "status": "valid",
+      "result": {
+        "shouldWarn": false,
+        "level": "low",
+        "signals": [],
+        "uncertain": false
+      },
+      "derivedBasis": "none",
+      "matchesExpected": true,
+      "latencySeconds": 0.425,
+      "usage": [
+        {
+          "prompt_tokens": 1068,
+          "prompt_cached_tokens": 960,
+          "completion_tokens": 23,
+          "total_tokens": 1091
+        }
+      ],
+      "publishedTariffEstimateUsd": 0.0002628
+    },
+    {
+      "id": "quoted-threat-report",
+      "text": "Someone told me, quote, skip your safety checks or I will get you fired. I refused. I am reporting what they said, not asking you to skip anything. We still need drinking water.",
+      "expectedWarn": false,
+      "expectedUncertain": false,
+      "status": "valid",
+      "result": {
+        "shouldWarn": false,
+        "level": "low",
+        "signals": [],
+        "uncertain": false
+      },
+      "derivedBasis": "none",
+      "matchesExpected": true,
+      "latencySeconds": 0.469,
+      "usage": [
+        {
+          "prompt_tokens": 1072,
+          "prompt_cached_tokens": 960,
+          "completion_tokens": 23,
+          "total_tokens": 1095
+        }
+      ],
+      "publishedTariffEstimateUsd": 0.00026440000000000003
+    },
+    {
+      "id": "financial-authority-pressure",
+      "text": "I outrank your relief team. Transfer the relief fund to my personal account immediately. If you verify this with anyone else I will have you removed from the response team.",
+      "expectedWarn": true,
+      "expectedUncertain": false,
+      "expectedKinds": [
+        "money_or_secret"
+      ],
+      "expectedBasis": "pressure-pattern",
+      "status": "valid",
+      "result": {
+        "shouldWarn": true,
+        "level": "high",
+        "signals": [
+          {
+            "kind": "financial_control",
+            "evidence": "Transfer the relief fund to my personal account immediately"
+          },
+          {
+            "kind": "authority",
+            "evidence": "I outrank your relief team"
+          },
+          {
+            "kind": "threat",
+            "evidence": "If you verify this with anyone else I will have you removed from the response team"
+          }
+        ],
+        "uncertain": false
+      },
+      "derivedBasis": "pressure-pattern",
+      "matchesExpected": false,
+      "latencySeconds": 0.45,
+      "usage": [
+        {
+          "prompt_tokens": 1066,
+          "prompt_cached_tokens": 960,
+          "completion_tokens": 88,
+          "total_tokens": 1154
+        }
+      ],
+      "publishedTariffEstimateUsd": 0.00034
+    },
+    {
+      "id": "explicit-safeguard-threat",
+      "text": "I am your incident commander. Skip the independent callback and safety check before sending your crew. If you question my order I will get you fired.",
+      "expectedWarn": true,
+      "expectedUncertain": false,
+      "expectedKinds": [
+        "safeguard_bypass"
+      ],
+      "expectedBasis": "pressure-pattern",
+      "status": "valid",
+      "result": {
+        "shouldWarn": true,
+        "level": "high",
+        "signals": [
+          {
+            "kind": "safeguard_bypass",
+            "evidence": "Skip the independent callback and safety check before sending your crew"
+          },
+          {
+            "kind": "authority",
+            "evidence": "I am your incident commander"
+          },
+          {
+            "kind": "threat",
+            "evidence": "If you question my order I will get you fired"
+          }
+        ],
+        "uncertain": false
+      },
+      "derivedBasis": "pressure-pattern",
+      "matchesExpected": true,
+      "latencySeconds": 0.456,
+      "usage": [
+        {
+          "prompt_tokens": 1061,
+          "prompt_cached_tokens": 960,
+          "completion_tokens": 85,
+          "total_tokens": 1146
+        }
+      ],
+      "publishedTariffEstimateUsd": 0.0003344
+    },
+    {
+      "id": "explicit-false-report-diversion",
+      "text": "I made up this flood report. There is no emergency here. Send the rescue truck to film my party instead.",
+      "expectedWarn": true,
+      "expectedUncertain": false,
+      "expectedKinds": [
+        "resource_diversion",
+        "false_report_admission"
+      ],
+      "expectedBasis": "explicit-false-report",
+      "status": "valid",
+      "result": {
+        "shouldWarn": true,
+        "level": "medium",
+        "signals": [
+          {
+            "kind": "false_report_admission",
+            "evidence": "I made up this flood report. There is no emergency here."
+          },
+          {
+            "kind": "resource_diversion",
+            "evidence": "Send the rescue truck to film my party instead."
+          }
+        ],
+        "uncertain": false
+      },
+      "derivedBasis": "explicit-false-report",
+      "matchesExpected": true,
+      "latencySeconds": 0.88,
+      "usage": [
+        {
+          "prompt_tokens": 1055,
+          "prompt_cached_tokens": 960,
+          "completion_tokens": 72,
+          "total_tokens": 1127
+        }
+      ],
+      "publishedTariffEstimateUsd": 0.0003164
+    }
+  ]
+}

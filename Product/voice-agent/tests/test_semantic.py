@@ -132,6 +132,53 @@ class ValidationTests(unittest.TestCase):
                 semantic.transcript_window("fictional")
 
 
+class ResponderValidationTests(unittest.TestCase):
+    text = 'I made up this flood report. Send the rescue truck to film my party. Skip the independent callback or I will get you fired.'
+    admission = {'kind': 'false_report_admission', 'evidence': 'I made up this flood report.'}
+    diversion = {'kind': 'resource_diversion', 'evidence': 'Send the rescue truck to film my party.'}
+    bypass = {'kind': 'safeguard_bypass', 'evidence': 'Skip the independent callback'}
+    threat = {'kind': 'threat', 'evidence': 'or I will get you fired.'}
+
+    def validate(self, value):
+        return semantic.validate_review(encoded(value), self.text, context='responder')
+
+    def test_explicit_admission_plus_diversion_is_a_distinct_two_kind_basis(self):
+        decision = {'shouldWarn': True, 'level': 'medium', 'signals': [self.admission, self.diversion], 'uncertain': False}
+        self.assertEqual(self.validate(decision), decision)
+        for signals in ([self.admission], [self.diversion], [self.diversion, self.bypass]):
+            with self.assertRaises(semantic.SemanticReviewError):
+                self.validate({**decision, 'signals': signals})
+        with self.assertRaises(semantic.SemanticReviewError):
+            semantic.validate_review(encoded({key: value for key, value in decision.items() if key != 'uncertain'}), self.text)
+
+    def test_safeguard_bypass_still_requires_distinct_pressure_evidence(self):
+        decision = {'shouldWarn': True, 'level': 'high', 'signals': [self.bypass, self.threat], 'uncertain': False}
+        self.assertEqual(self.validate(decision), decision)
+        with self.assertRaises(semantic.SemanticReviewError):
+            self.validate({**decision, 'signals': [self.bypass, {**self.threat, 'evidence': 'invented pressure'}]})
+
+    def test_uncertainty_is_required_responder_only_and_never_a_supported_warning(self):
+        for uncertain in (True, False):
+            value = {**NO_WARNING, 'uncertain': uncertain}
+            self.assertEqual(self.validate(value), value)
+            with self.assertRaises(semantic.SemanticReviewError):
+                semantic.validate_review(encoded(value), self.text)
+        for value in (NO_WARNING, {**NO_WARNING, 'uncertain': 'false'},
+                      {'shouldWarn': True, 'level': 'medium', 'signals': [self.admission, self.diversion], 'uncertain': True}):
+            with self.assertRaises(semantic.SemanticReviewError):
+                self.validate(value)
+
+    def test_responder_prompt_window_budget_includes_context_schema_and_unicode(self):
+        self.assertLess(semantic.request_size_bytes('', context='responder'), semantic.MAX_REQUEST_BYTES)
+        for text in ('a' * 8000, '界🔐é' * 8000, '\\"\n' * 8000):
+            window = semantic.transcript_window(text, context='responder')
+            self.assertTrue(text.endswith(window))
+            self.assertLessEqual(semantic.request_size_bytes(window, context='responder'), 15000)
+        self.assertIn('ordinary', semantic.RESPONDER_SYSTEM_PROMPT.lower())
+        self.assertIn('negation', semantic.RESPONDER_SYSTEM_PROMPT.lower())
+        self.assertIn('not proof', semantic.RESPONDER_SYSTEM_PROMPT.lower())
+
+
 class FakeStream:
     def __init__(self, chunks, *, error=None, hang=False):
         self.chunks = iter(chunks)
@@ -175,6 +222,28 @@ class FakeLLM:
 
 
 class ReviewerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_responder_context_uses_required_uncertainty_schema_and_untrusted_envelope(self):
+        result = {**NO_WARNING, 'uncertain': False}
+        text = 'Please hurry, I am panicking. Three people need rescue near Riverbend.'
+        client = FakeLLM(FakeStream([chunk(encoded(result))]))
+        reviewer = semantic.SemanticReviewer(context='responder', llm_client=client)
+        self.assertEqual(await reviewer.review(text), result)
+        call = client.calls[0]
+        self.assertEqual(call['chat_ctx'].items[0].text_content, semantic.RESPONDER_SYSTEM_PROMPT)
+        self.assertEqual(json.loads(call['chat_ctx'].items[1].text_content), {'caller_transcript': text})
+        schema = llm_utils.to_openai_response_format(call['response_format'])['json_schema']['schema']
+        self.assertIn('uncertain', schema['required'])
+        self.assertEqual(schema['properties']['uncertain']['type'], 'boolean')
+        self.assertEqual(call['extra_kwargs']['max_completion_tokens'], 800)
+        with self.assertRaises(semantic.SemanticReviewError):
+            semantic.SemanticReviewer(context='unrecognized')
+
+    async def test_empty_responder_context_is_unavailable_to_clear_without_inference(self):
+        client = FakeLLM(FakeStream([]))
+        result = await semantic.SemanticReviewer(context='responder', llm_client=client).review('   ')
+        self.assertEqual(result, {**NO_WARNING, 'uncertain': True})
+        self.assertEqual(client.calls, [])
+
     async def test_real_sdk_schema_conversion_stream_assembly_and_request_limits(self):
         raw = encoded(WARNING)
         stream = FakeStream([chunk(raw[:17]), SimpleNamespace(delta=None), chunk(), chunk(raw[17:])])

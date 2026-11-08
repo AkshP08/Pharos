@@ -1,8 +1,8 @@
 """Photon SIP -> LiveKit voice intake and opt-in protected test-call relay.
 
-No audio/transcript/session recording is enabled by this agent. Only finalized,
-consented text turns are delivered to Pharos. Guard mode never speaks warnings
-into a shared call; the backend handles private notification delivery.
+Provider session recording is disabled. Separately consented caller-only PCM
+can be retained privately for human review; transcript-only callers keep audio
+off. Guard mode never speaks warnings into a shared call.
 """
 from __future__ import annotations
 
@@ -29,13 +29,14 @@ from livekit import agents, api, rtc
 from livekit.agents import Agent, AgentServer, AgentSession, StopResponse, inference, llm, room_io
 
 from pharos_runtime import CallEventStream, ConfigurationError, DeliveryError, Settings, VoiceEventClient, is_consent_withdrawal, parse_consent
+from pharos_audio import CallerAudioRecorder, upload_recording
 
 # Resolve against this file so running from the repo root cannot load another .env.
 load_dotenv(Path(__file__).with_name(".env.local"))
 settings = Settings.from_env(dict(os.environ))
 logger = logging.getLogger("pharos-voice-agent")
 # This process runs on the demo laptop: avoid eight idle production processes.
-server = AgentServer(num_idle_processes=0)
+server = AgentServer(num_idle_processes=0, shutdown_process_timeout=70.0)
 
 INTAKE_INSTRUCTIONS = """
 You are Pharos, a brief automated voice intake helper in a disaster scenario.
@@ -65,10 +66,12 @@ unknown; ask at most one short clarification when it changes the help needed.
 For a calm caller, a brief confirmation is optional when useful. Accept
 corrections rather than repeating old facts.
 Do not request names, passwords, account numbers, payment details, or codes.
-If the caller is checking a suspicious contact, ask what the contact requested.
-Do not claim to hear another phone call. A content warning is not proof of identity.
-For payment/code requests, briefly advise independent verification through an official
-contact. Urgency alone does not prove fraud. Continue collecting any help request.
+Continue collecting the caller's help facts even if wording needs human review.
+Never accuse the caller of lying, fraud, or abuse. A separate silent review checks
+concrete requests for responder verification; it does not establish truth or intent.
+Normal rescue requests, panic, inconsistent memories, corrections, and missing
+location do not establish manipulation or a false report. Do not confront the
+caller or claim their request has been accepted, rejected, or independently verified.
 Do not give evacuation routes, medical instructions, or claims about live incidents.
 For immediate danger, suggest contacting the local emergency number if they can.
 Tone, accent, emotion, and persistence never determine priority or scam risk.
@@ -84,7 +87,7 @@ request for human review once, briefly; do not keep repeating receipt language.
 
 INTAKE_DISCLOSURE = (
     "Pharos test line, not emergency dispatch. "
-    "May I share a short transcript with responders? Say yes or no."
+    "May I share a transcript and call audio with responders? Say yes, transcript only, or no."
 )
 GUARD_DISCLOSURE = (
     "This is a Pharos protected test line. Before connecting you, speech recognition "
@@ -180,7 +183,9 @@ class PharosAgent(Agent):
                         await self.stream.consent(False)
                         await self._say_then_stop("I did not receive clear consent. I will not send your answers to Pharos. Goodbye.")
                     raise StopResponse()
-                await self.stream.consent(answer.decision)
+                await self.stream.consent(answer.decision, audio_consent=answer.audio_consent and not self.guard)
+                if self.stopped or self.stream.revoked or self.stream.closed:
+                    raise StopResponse()
                 if not answer.decision:
                     await self._say_then_stop("I will not send your answers to Pharos. Goodbye.")
                     raise StopResponse()
@@ -217,6 +222,8 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
     client: VoiceEventClient | None = None
     stream: CallEventStream | None = None
     session: AgentSession | None = None
+    recorder = CallerAudioRecorder() if not guard else None
+    audio_upload_task: asyncio.Task[bool] | None = None
     relay_created = False
     ended = asyncio.Event()
     cleanup_task: asyncio.Task[None] | None = None
@@ -226,12 +233,18 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
         ended.set()
         if stream is not None:
             stream.stop_background()
+        if recorder is not None:
+            recorder.stop(discard=stream is None or not stream.audio_consented or stream.revoked)
         ctx.shutdown(reason)
 
     async def perform_cleanup() -> None:
+        nonlocal audio_upload_task
+        cleanup_started = asyncio.get_running_loop().time()
         ended.set()
         if stream is not None:
             stream.stop_background()
+        if recorder is not None:
+            recorder.stop(discard=stream is None or not stream.audio_consented or stream.revoked)
         # Release phone legs before potentially slow transcript/backend flushing.
         # Individual dispatch rooms contain this call only. If startup failed
         # before selecting its participant, still release any admitted SIP leg.
@@ -244,9 +257,17 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
         for identity in identities:
             if identity in ctx.room.remote_participants:
                 try:
-                    await ctx.api.room.remove_participant(api.RoomParticipantIdentity(room=ctx.room.name, identity=identity))
+                    await asyncio.wait_for(ctx.api.room.remove_participant(
+                        api.RoomParticipantIdentity(room=ctx.room.name, identity=identity)), timeout=8)
                 except Exception:
                     logger.error("Could not clean up a test call participant")
+        if recorder is not None:
+            try:
+                await asyncio.wait_for(recorder.aclose(
+                    discard=stream is None or not stream.audio_consented or stream.revoked), timeout=3)
+            except TimeoutError:
+                recorder.stop(discard=True)
+                logger.error("Caller audio close timed out; local audio discarded")
         if session is not None:
             try:
                 await asyncio.wait_for(session.aclose(), timeout=8)
@@ -257,6 +278,22 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
                 await asyncio.wait_for(stream.finish(), timeout=25)
             except (DeliveryError, TimeoutError):
                 logger.error("Call finalization was not acknowledged; responder follow-up may be needed")
+        if recorder is not None and stream is not None and client is not None:
+            # Leave five seconds for SDK/client teardown inside the configured
+            # 70-second process shutdown limit. Phone legs are already released.
+            audio_timeout = min(45.0, max(0.0, 65.0 - (asyncio.get_running_loop().time() - cleanup_started)))
+            if stream.audio_consented and not stream.revoked and recorder.buffer.byte_length and audio_timeout > 0:
+                audio_upload_task = asyncio.create_task(upload_recording(
+                    client, stream.call_id, recorder,
+                    can_upload=lambda: stream.audio_consented and not stream.revoked,
+                ))
+                try:
+                    await asyncio.wait_for(audio_upload_task, timeout=audio_timeout)
+                except (DeliveryError, TimeoutError, asyncio.CancelledError):
+                    logger.error("Private call audio upload did not complete")
+                    recorder.buffer.discard()
+            else:
+                recorder.buffer.discard()
         if client is not None:
             await client.close()
 
@@ -304,11 +341,33 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
             async def on_progress(update: dict[str, Any]) -> bool:
                 return await announce_responder_progress(session, stream, update)
 
+            def on_audio_consent(allowed: bool) -> None:
+                if recorder is None:
+                    return
+                if not allowed:
+                    recorder.stop(discard=True)
+                    if audio_upload_task is not None:
+                        audio_upload_task.cancel()
+                    return
+                recorder.allow()
+                for publication in inbound.track_publications.values():
+                    if publication.track is not None and publication.track.kind == rtc.TrackKind.KIND_AUDIO:
+                        recorder.start(publication.track)
+                        break
+
+            @ctx.room.on("track_subscribed")
+            def on_caller_track(track: Any, publication: Any, participant: Any) -> None:
+                if (recorder is not None and stream is not None and stream.audio_consented
+                        and not stream.revoked and participant.identity == inbound.identity
+                        and track.kind == rtc.TrackKind.KIND_AUDIO):
+                    recorder.start(track)
+
             stream = CallEventStream(client, f"ph-call-{uuid.uuid4()}", purpose=config.mode,
                                      on_warning=on_warning, transport="sip" if is_phone else "webrtc",
                                      caller_number=caller_number if is_phone else None,
-                                     semantic_review=guard and config.semantic_guard_review,
-                                     on_progress=on_progress if not guard else None)
+                                     semantic_review=config.semantic_guard_review,
+                                     on_progress=on_progress if not guard else None,
+                                     on_audio_consent=on_audio_consent if not guard else None)
             await stream.start()
 
             async def start_relay() -> None:

@@ -442,8 +442,8 @@ class SemanticSchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(event.startswith('pressure.') for event, _ in events))
         await stream.finish()
 
-    async def test_intake_and_disabled_guard_never_enable_or_import_review(self):
-        for purpose, enabled in (('intake', True), ('guard', False)):
+    async def test_disabled_intake_and_guard_never_enable_or_import_review(self):
+        for purpose, enabled in (('intake', False), ('guard', False)):
             with self.subTest(purpose=purpose, enabled=enabled):
                 reviewer = self.ControlledReviewer()
                 stream, events, _, factory = await self.fixture(reviewer, purpose=purpose, enabled=enabled)
@@ -453,6 +453,43 @@ class SemanticSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 await stream.finish()
                 factory.assert_not_called()
                 reviewer.aclose.assert_not_awaited()
+
+    async def test_intake_saves_facts_without_waiting_for_responder_review(self):
+        reviewer = self.ControlledReviewer()
+        async def post(event, payload):
+            return {'accepted': True, **({'caseId': 'fictional-urgent-case'} if event == 'turn' else {})}
+        stream, events, _, _ = await self.fixture(reviewer, post_hook=post, purpose='intake')
+        self.assertEqual(events[0][1]['purpose'], 'intake')
+        self.assertEqual(events[0][1]['analysisMode'], 'semantic')
+        await stream.consent(True)
+        result = await stream.turn('caller', 'Water is rising at Riverbend; three people need rescue.')
+        self.assertEqual(result['caseId'], 'fictional-urgent-case')
+        first = await self.next_review(reviewer)
+        await stream.turn('agent', 'What landmark should responders use?')
+        await stream.turn('caller', 'Near the fictional water tower.')
+        self.assertEqual(len(reviewer.requests), 1)
+        first.set_result({**self.benign, 'uncertain': False})
+        latest = await self.next_review(reviewer)
+        self.assertNotIn('What landmark', reviewer.requests[-1])
+        latest.set_result({**self.benign, 'uncertain': False})
+        await self.drain_review(stream)
+        self.assertEqual([payload['sequence'] for event, payload in events if event == 'pressure.review'], [2])
+        await stream.finish()
+        self.assertEqual(events[-1], ('call.ended', {'deliveryFailed': False}))
+
+    async def test_default_reviewer_routes_only_intake_to_responder_context(self):
+        for purpose, context in (('intake', 'responder'), ('guard', 'guard')):
+            reviewer = SimpleNamespace(review=AsyncMock(return_value=self.benign), aclose=AsyncMock())
+            with patch('pharos_semantic.SemanticReviewer', return_value=reviewer) as constructor:
+                stream = CallEventStream(SimpleNamespace(post=AsyncMock(return_value={'accepted': True})),
+                                         'fictional-context', purpose=purpose, semantic_review=True)
+                await stream.start()
+                constructor.assert_not_called()
+                await stream.consent(True)
+                await stream.turn('caller', 'Consented fictional wording')
+                await self.drain_review(stream)
+                constructor.assert_called_once_with(context=context)
+                await stream.finish()
 
 
 class ResponderProgressTests(unittest.IsolatedAsyncioTestCase):
@@ -689,8 +726,17 @@ class AgentConsentTests(unittest.IsolatedAsyncioTestCase):
         await voice_agent.on_user_turn_completed(llm.ChatContext(), message)
         calls = client.post.await_args_list
         self.assertEqual([call.args[0] for call in calls], ["consent", "turn"])
+        self.assertTrue(calls[0].kwargs['audioConsent'])
         self.assertEqual(calls[1].kwargs["text"], "we need a ride near Riverbend")
         self.assertIn(message.id, voice_agent.persisted_user_ids)
+
+    async def test_transcript_only_consent_keeps_fact_collection_without_audio_permission(self):
+        voice_agent, stream, client, context, session = self.agent()
+        await voice_agent.on_user_turn_completed(llm.ChatContext(), llm.ChatMessage(role='user', content=['Transcript only, three people need rescue near Riverbend.']))
+        self.assertTrue(stream.consented)
+        self.assertFalse(stream.audio_consented)
+        self.assertFalse(client.post.await_args_list[0].kwargs['audioConsent'])
+        self.assertEqual(client.post.await_args_list[1].kwargs['text'], 'three people need rescue near Riverbend')
 
     async def test_withdrawal_is_not_a_transcript_turn_and_blocks_future_collection(self):
         voice_agent, stream, client, context, session = self.agent()
@@ -725,7 +771,9 @@ class LifetimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(agent.INTAKE_DISCLOSURE.split()), 25)
         self.assertNotRegex(agent.INTAKE_DISCLOSURE.lower(), r'photon|livekit|sdk|speech recognition|software')
         self.assertIn('transcript', agent.INTAKE_DISCLOSURE)
-        self.assertIn('yes or no', agent.INTAKE_DISCLOSURE)
+        self.assertRegex(agent.INTAKE_DISCLOSURE, r'yes.*or no')
+        self.assertIn('call audio', agent.INTAKE_DISCLOSURE)
+        self.assertIn('transcript only', agent.INTAKE_DISCLOSURE)
         config, context, remover = self.fixture()
         client = SimpleNamespace(post=AsyncMock(return_value={"accepted": True}), close=AsyncMock())
         handlers = {}
@@ -746,6 +794,53 @@ class LifetimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(constructor.call_args.kwargs['turn_handling']['preemptive_generation'], {'enabled': False})
         remover.assert_awaited_once()
         self.assertEqual([call.args[0] for call in client.post.await_args_list], ['call.started', 'consent'])
+
+    async def test_audio_binds_only_caller_track_and_upload_waits_until_phone_removed_and_call_ended(self):
+        config, context, remover = self.fixture()
+        incoming = next(iter(context.room.remote_participants.values()))
+        caller_track = SimpleNamespace(kind=agent.rtc.TrackKind.KIND_AUDIO)
+        incoming.track_publications = {'caller-audio': SimpleNamespace(track=caller_track)}
+        room_handlers, session_handlers, captured = {}, {}, {}
+        def register(handlers, name):
+            def decorator(callback):
+                handlers[name] = callback
+                return callback
+            return decorator
+        context.room.on = lambda name: register(room_handlers, name)
+        client = SimpleNamespace(post=AsyncMock(return_value={'accepted': True}), close=AsyncMock())
+        recorder = SimpleNamespace(allow=MagicMock(), start=MagicMock(), stop=MagicMock(), aclose=AsyncMock(),
+                                   buffer=SimpleNamespace(byte_length=640, discard=MagicMock()))
+        def make_stream(*args, **kwargs):
+            stream = CallEventStream(*args, **kwargs)
+            captured['stream'] = stream
+            return stream
+        async def say(*args, **kwargs):
+            recorder.start.assert_not_called()
+            await captured['stream'].consent(True, audio_consent=True)
+            recorder.allow.assert_called_once()
+            recorder.start.assert_called_once_with(caller_track)
+            room_handlers['track_subscribed'](SimpleNamespace(kind=agent.rtc.TrackKind.KIND_AUDIO),
+                                               None, SimpleNamespace(identity='some-other-participant'))
+            recorder.start.assert_called_once_with(caller_track)
+            session_handlers['close'](None)
+        session = SimpleNamespace(on=lambda name: register(session_handlers, name), start=AsyncMock(),
+                                  say=AsyncMock(side_effect=say), aclose=AsyncMock())
+        async def upload(*args, **kwargs):
+            remover.assert_awaited_once()
+            self.assertTrue(captured['stream'].closed)
+            self.assertEqual(client.post.await_args_list[-1].args[0], 'call.ended')
+            self.assertTrue(kwargs['can_upload']())
+            return True
+        with patch.object(agent, 'VoiceEventClient', return_value=client), \
+                patch.object(agent, 'CallEventStream', side_effect=make_stream), \
+                patch.object(agent, 'CallerAudioRecorder', return_value=recorder), \
+                patch.object(agent, 'upload_recording', side_effect=upload) as uploader, \
+                patch.object(agent, 'AgentSession', return_value=session), \
+                patch.object(agent.inference, 'STT'), patch.object(agent.inference, 'LLM'), \
+                patch.object(agent.inference, 'TTS'), patch.object(agent.inference, 'TurnDetector'):
+            await agent.run_session(context, config)
+        uploader.assert_awaited_once()
+        client.close.assert_awaited_once()
 
     async def test_start_event_failure_still_closes_admitted_phone_leg(self):
         config, context, remover = self.fixture()

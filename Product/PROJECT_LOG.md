@@ -177,3 +177,11 @@ Append a dated note after each meaningful implementation session. Include what c
 - Next: commit and push this cleanup, then redeploy from the clean committed tree so the live release is traceable to a GitHub revision. The actual deployed content remains synthetic-only; no Photon live runtime or real emergency data is involved.
 - Wrangler's non-fatal local debug-log permission warning remains during build. The app itself was deployed and confirmed serving despite that warning.
 - Screenshot checkpoint: the live site URL and release result were confirmed in the DeepSpace CLI. The saved onboarding screenshot is [Photon channel selection](screenshots/photon-channel-selection-2026-11-07-1646.png); capture a browser screenshot of the public demo after the clean redeploy.
+
+## 2026-11-07 6:38 PM CST — Clean DeepSpace redeploy confirmed
+
+- Committed and pushed the cleanup as `258c924` under the student's Git identity. `/Challenge Info/` is now ignored, preserving the original challenge slides locally without uploading them.
+- Redeployed from the clean `main` working tree. DeepSpace confirms the release is serving at `https://signalbridge-hackutd-2026.app.space`, with GitHub source `akshp08/signalbridge-hackutd-2026`, `dirty: false`, no app secrets, and all six static assets already present.
+- Release identifier: `rel_01M6W9E3DSKP6E4WZWATR83Z0Z`. DeepSpace's CLI notes that GitHub-source releases record branch/dirty status but no commit lineage; the source remains available on the pushed `main` branch.
+- This hosting milestone publishes only the static synthetic prototype. The queue and Pressure Trace are demo logic; Photon is not connected to the deployed app and no calls, messages, or resident details are processed.
+- Visual check: opened the live Response Desk in Chrome and confirmed the incident queue, human-review language, synthetic message example, and “Demo mode · No live Photon data” footer are visible. The screenshot was shown in the progress conversation; the saved setup screenshot remains [Photon channel selection](screenshots/photon-channel-selection-2026-11-07-1646.png).

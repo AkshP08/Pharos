@@ -29,24 +29,32 @@ function startPolling() {
 }
 function showReviewStatus(data) {
   let message = '';
+  const callKnown = typeof data.currentCallId === 'string';
+  const currentWarnings = callKnown ? (data.alerts || []).filter(alert => alert.callId === data.currentCallId) : data.alerts || [];
+  const hasEarlierWarning = callKnown && (data.alerts || []).some(alert => alert.callId && alert.callId !== data.currentCallId);
   if (data.analysisMode === 'semantic') {
     if (data.reviewStatus === 'pending') message = 'Reviewing the latest call wording…';
     else if (data.reviewStatus === 'unavailable') message = 'Context review unavailable. This does not verify the caller. Check unexpected money, code, or access requests independently; continue immediate physical safety instructions.';
-    else if (data.reviewStatus === 'completed') message = data.alerts?.length
+    else if (data.reviewStatus === 'completed') message = currentWarnings.length
       ? 'Contextual transcript review completed. Review the warning below; caller identity and safety are not verified.'
-      : 'No warning identified in this review. Caller identity and safety are not verified.';
+      : hasEarlierWarning
+        ? 'No warning identified in the latest call review. An earlier call warning is retained below. Caller identity and safety are not verified.'
+        : 'No warning identified in this review. Caller identity and safety are not verified.';
+    if (hasEarlierWarning && ['pending', 'unavailable'].includes(data.reviewStatus)) message += ' An earlier call warning is retained below.';
   }
   $('#reviewCard').hidden = !message;
   $('#reviewStatus').textContent = message;
 }
-function showAlert(alert) {
+function showAlert(alert, currentCallId) {
+  const earlierCall = Boolean(currentCallId && alert.callId && alert.callId !== currentCallId);
   $('#warningCard').hidden = false;
   $('#warningCard').classList.add('warn');
   $('#waitingCard').hidden = true;
-  $('#warningTitle').textContent = alert.headline || 'Pause and verify';
+  $('#warningTitle').textContent = `${earlierCall ? 'Earlier call warning: ' : ''}${alert.headline || 'Pause and verify'}`;
   $('#warningConfidence').textContent = alert.confidence || 'A wording pattern deserves independent verification; this is not a fraud probability.';
   const sourceLabel = alert.analysisSource === 'caller-id-history' ? 'Prior caller-ID reports · identity unverified' : alert.analysisSource === 'context-model' ? 'Contextual transcript review' : 'Call wording review';
-  $('#warningTime').textContent = `${sourceLabel} · ${new Date(alert.createdAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
+  const timestamp = new Date(alert.createdAt).toLocaleString([], {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+  $('#warningTime').textContent = `${earlierCall ? 'Earlier call · ' : ''}${sourceLabel} · ${timestamp}`;
   $('#evidence').replaceChildren();
   for (const signal of alert.signals || []) {
     const row = document.createElement('li');
@@ -56,7 +64,7 @@ function showAlert(alert) {
     $('#evidence').append(row);
   }
   $('#nextStep').textContent = alert.nextStep;
-  if (alert.id !== lastAlert && lastAlert) navigator.vibrate?.([120,60,120]);
+  if (!earlierCall && alert.id !== lastAlert && lastAlert) navigator.vibrate?.([120,60,120]);
   lastAlert = alert.id;
 }
 async function refresh() {
@@ -77,7 +85,7 @@ async function refresh() {
     if (!data.pushPublicKey) $('#notificationStatus').textContent = 'Phone push is not configured yet. This screen can show warnings while open.';
     showReviewStatus(data);
     // Returned alerts remain authoritative, including earlier warnings retained after a later review.
-    if (data.alerts?.length) showAlert(data.alerts[0]);
+    if (data.alerts?.length) showAlert(data.alerts.find(alert => alert.callId === data.currentCallId) || data.alerts[0], data.currentCallId);
     else clearAlert();
   } catch (error) {
     if (sequence !== refreshSequence || token !== requestToken || disconnecting) return;

@@ -7,8 +7,8 @@ const source = await readFile(new URL('../../guard.js', import.meta.url), 'utf8'
 const enrollment = 'a'.repeat(43);
 const storageKey = 'pharos-warning-enrollment';
 const endpoint = 'https://web.push.apple.com/test-only';
-const warning = { id: 'warning-one', createdAt: 1_800_000_000_000, headline: 'Pause and verify', confidence: 'A wording pattern, not a probability.', nextStep: 'Call a trusted number.', signals: [{ psychology: 'Urgency', evidence: 'Act now.', explanation: 'Pressure can rush a decision.' }] };
-const status = alerts => ({ status: 'in-progress', expiresAt: 1_900_000_000_000, pushPublicKey: 'test-key', alerts });
+const warning = { id: 'warning-one', callId: 'call-one', createdAt: 1_800_000_000_000, headline: 'Pause and verify', confidence: 'A wording pattern, not a probability.', nextStep: 'Call a trusted number.', signals: [{ psychology: 'Urgency', evidence: 'Act now.', explanation: 'Pressure can rush a decision.' }] };
+const status = alerts => ({ currentCallId: 'call-one', status: 'in-progress', expiresAt: 1_900_000_000_000, pushPublicKey: 'test-key', alerts });
 const response = (data, httpStatus = 200) => ({ ok: httpStatus >= 200 && httpStatus < 300, status: httpStatus, json: async () => data });
 const settle = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
@@ -25,6 +25,7 @@ async function client(options = {}) {
   const timers = new Map();
   let nextTimer = 0;
   let reloads = 0;
+  let vibrations = 0;
   const state = {
     onStatus: options.onStatus || (() => response(status([warning]))),
     onRemove: options.onRemove || (() => response({ removed: true })),
@@ -54,7 +55,7 @@ async function client(options = {}) {
     location: { hash: `#${enrollment}`, reload() { ++reloads; } },
     history: { replaceState() {} },
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
-    navigator: { serviceWorker: { getRegistration: async () => browserRegistration }, vibrate() {} },
+    navigator: { serviceWorker: { getRegistration: async () => browserRegistration }, vibrate() { ++vibrations; } },
     window: {},
     setInterval(callback) { const id = ++nextTimer; timers.set(id, callback); return id; },
     clearInterval: id => timers.delete(id),
@@ -72,6 +73,7 @@ async function client(options = {}) {
   return {
     get, state, storage, calls, order, timers,
     get reloads() { return reloads; },
+    get vibrations() { return vibrations; },
     value: expression => vm.runInContext(expression, context),
     refresh: () => vm.runInContext('refresh()', context),
     click: selector => get(selector).listeners.click(),
@@ -245,4 +247,37 @@ test('semantic completed never verifies safety and does not erase returned earli
   assert.equal(page.get('#evidence').children.length, 1);
   assert.equal(page.get('#reviewStatus').textContent, 'Contextual transcript review completed. Review the warning below; caller identity and safety are not verified.');
   assert.equal(page.get('#reviewCard').classList.contains('active'), false);
+});
+
+test('an earlier risky-call warning is historical when the newest call review has no warning', async () => {
+  const earlier = { ...warning, analysisSource: 'context-model' };
+  const page = await client({ onStatus: () => response({ ...status([earlier]), currentCallId: 'newer-call', analysisMode: 'semantic', reviewStatus: 'completed' }) });
+  assert.equal(page.get('#warningCard').hidden, false, 'Retain the previous warning and evidence');
+  assert.equal(page.get('#evidence').children.length, 1);
+  assert.equal(page.get('#warningTitle').textContent, 'Earlier call warning: Pause and verify');
+  assert.match(page.get('#warningTime').textContent, /^Earlier call · Contextual transcript review · /);
+  assert.ok(page.get('#warningTime').textContent.includes(String(new Date(earlier.createdAt).getFullYear())), 'Historical warnings show a date, not only a clock time');
+  assert.equal(page.get('#reviewStatus').textContent, 'No warning identified in the latest call review. An earlier call warning is retained below. Caller identity and safety are not verified.');
+});
+
+test('a pending or unavailable newest review does not present the previous call warning as new', async () => {
+  const page = await client();
+  for (const reviewStatus of ['pending', 'unavailable']) {
+    page.state.onStatus = () => response({ ...status([{ ...warning, id: `earlier-${reviewStatus}`, analysisSource: 'context-model' }]), currentCallId: 'newest-call', analysisMode: 'semantic', reviewStatus });
+    await page.refresh();
+    assert.match(page.get('#warningTitle').textContent, /^Earlier call warning:/);
+    assert.match(page.get('#reviewStatus').textContent, /An earlier call warning is retained below/);
+    assert.equal(page.vibrations, 0, 'Historical evidence does not trigger a new-warning vibration');
+  }
+});
+
+test('a current-call warning is preferred while earlier-call alerts remain in the response', async () => {
+  const earlier = { ...warning, id: 'old-warning', callId: 'old-call' };
+  const current = { ...warning, id: 'current-warning', callId: 'current-call', headline: 'Current call needs verification' };
+  const alerts = [earlier, current];
+  const page = await client({ onStatus: () => response({ ...status(alerts), currentCallId: 'current-call', analysisMode: 'semantic', reviewStatus: 'completed' }) });
+  assert.equal(page.get('#warningTitle').textContent, 'Current call needs verification');
+  assert.ok(!page.get('#warningTime').textContent.includes('Earlier call'));
+  assert.equal(page.get('#reviewStatus').textContent, 'Contextual transcript review completed. Review the warning below; caller identity and safety are not verified.');
+  assert.deepEqual(alerts.map(alert => alert.id), ['old-warning', 'current-warning'], 'Display selection does not erase retained alert history');
 });

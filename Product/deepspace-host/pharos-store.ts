@@ -487,7 +487,7 @@ export class PharosStore extends DurableObject {
           const alerts = (recipientScope
             ? this.rows<{ payload: string }>("SELECT a.payload FROM resident_alerts a JOIN calls c ON a.call_id = c.id WHERE a.synthetic = 0 AND json_extract(c.payload, '$.purpose') = 'guard' AND json_extract(c.payload, '$.transcriptExpiredAt') IS NULL ORDER BY a.created_at DESC LIMIT 20")
             : this.rows<{ payload: string }>('SELECT payload FROM resident_alerts WHERE call_id = ? ORDER BY created_at DESC', access.call_id)).map(row => decode<ResidentAlert>(row.payload))
-          return json({ status: call?.status || 'completed', analysisMode: call?.analysisMode, reviewStatus: call?.transcriptExpiredAt ? undefined : call?.reviewStatus, alerts, expiresAt: new Date(access.expires_at).toISOString() })
+          return json({ currentCallId: call?.id || null, status: call?.status || 'completed', analysisMode: call?.analysisMode, reviewStatus: call?.transcriptExpiredAt ? undefined : call?.reviewStatus, alerts, expiresAt: new Date(access.expires_at).toISOString() })
         }
         case 'warning.enroll': {
           const expiresAt = Date.now() + this.retentionMs

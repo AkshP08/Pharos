@@ -339,3 +339,29 @@ test('revocation and retention scrub semantic evidence and prevent late review r
     });
   }
 });
+
+test('recipient-wide review status identifies the newest call while retaining prior-call warnings', async t => {
+  const mf = runtime(t);
+  const enrollment = await request(mf, '/api/guard/enrollment', { body: {}, token: 'test-ingest' });
+  assert.equal(enrollment.status, 201);
+  const recipientToken = new URL(enrollment.data.warningUrl).hash.slice(1);
+  const beforeCalls = await request(mf, '/api/guard/status', { token: recipientToken });
+  assert.equal(beforeCalls.data.currentCallId, null);
+
+  const first = await begin(mf, 'recipient-earlier-risk');
+  await turn(mf, 'recipient-earlier-risk', codeText);
+  assert.ok((await review(mf, 'recipient-earlier-risk', 0, medium)).data.warning);
+  assert.equal((await ingest(mf, 'call.ended', 'recipient-earlier-risk')).status, 200);
+  await begin(mf, 'recipient-newest-benign');
+  await turn(mf, 'recipient-newest-benign', 'This is the evacuation center. Please follow the posted safety instructions.');
+  assert.equal((await review(mf, 'recipient-newest-benign', 0, clear)).status, 200);
+
+  const latest = await request(mf, '/api/guard/status', { token: recipientToken });
+  assert.equal(latest.status, 200);
+  assert.equal(latest.data.currentCallId, 'recipient-newest-benign');
+  assert.equal(latest.data.reviewStatus, 'completed');
+  assert.deepEqual(latest.data.alerts.map(alert => alert.callId), ['recipient-earlier-risk']);
+  const callBound = await request(mf, '/api/guard/status', { token: new URL(first.warningUrl).hash.slice(1) });
+  assert.equal(callBound.data.currentCallId, 'recipient-earlier-risk', 'A call-scoped link keeps its own review/alert provenance');
+  assert.deepEqual(callBound.data.alerts.map(alert => alert.callId), ['recipient-earlier-risk']);
+});

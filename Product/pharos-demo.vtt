@@ -1,46 +1,46 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:10.000
-Pharos turns a phone report into a shared response workflow. Beacon keeps reported urgency, service area, and human verification visible in one responder workspace.
+00:00:00.000 --> 00:00:09.000
+When someone needs help, a phone call should be enough. Pharos turns that call into a clear next step for responders.
 
 2
-00:00:10.000 --> 00:00:13.000
-First, a real call with fictional scenario details.
+00:00:09.000 --> 00:00:12.000
+Here’s a short excerpt from a real call.
 
-call-excerpt
-00:00:13.000 --> 00:00:24.000
-[Real phone-call excerpt with fictional scenario details]
+original-call
+00:00:12.000 --> 00:00:23.000
+[Original real phone-call excerpt with fictional scenario details]
 
 3
-00:00:24.000 --> 00:00:37.000
-After the call, Beacon shows its completed session and generated speaker transcript. Responders can inspect the caller's exact words and open the linked case.
+00:00:23.000 --> 00:00:35.000
+That call is now complete. The team can read the generated transcript, check consent, and open the linked request. Nothing has to be copied by hand.
 
 4
-00:00:37.000 --> 00:00:50.000
-The case preserves location, needs, and priority explanations. New reports can update urgency while retaining earlier history. Suggested ranking supports human decisions; it does not dispatch help.
+00:00:35.000 --> 00:00:45.000
+Overview brings the essentials together: where the caller is, what they need, and why the request is ranked this way. These are reported facts for people to review.
 
 5
-00:00:50.000 --> 00:01:01.000
-The training lab accepts a prepared fictional transcript. One action processes it into a persistent case, making the intake workflow easy to rehearse without a phone call.
+00:00:45.000 --> 00:00:58.000
+For this fictional training report, the team needs to check a concern. The quoted words stay beside the request. Reported danger keeps its urgency while normal response actions wait for human review.
 
 6
-00:01:01.000 --> 00:01:14.000
-Content concerns appear beside reported danger. Normal assignment and arrival estimates stay on hold until a human reviews the current evidence. Concern signals are not proof of deception.
+00:00:58.000 --> 00:01:12.000
+The reviewer records a reason and accepts the report. Now an eligible responder can take ownership. That decision stays tied to the evidence, so everyone can see what was checked.
 
 7
-00:01:14.000 --> 00:01:27.000
-Here, the reviewer records a reason and accepts the fictional report. An eligible responder can then claim ownership. Decisions remain tied to the evidence version and audit history.
+00:01:12.000 --> 00:01:24.000
+Here, the desk reports that the responder is on the way and gives a ten-minute estimate. A claim alone never promises travel, and an estimate is not a guarantee.
 
 8
-00:01:27.000 --> 00:01:39.000
-The desk explicitly reports On the way and enters a fresh estimate. Claiming alone never confirms travel, and elapsed time never confirms arrival. Updated facts can require reassessment.
+00:01:24.000 --> 00:01:35.000
+History keeps the report and human decisions together. When new information arrives, the team can look back, reassess the situation, and update the next step.
 
 9
-00:01:39.000 --> 00:01:49.000
-Coverage profiles show service areas, capabilities, availability, and capacity. New profiles require coordinator approval before they can receive cases.
+00:01:35.000 --> 00:01:44.000
+Coverage shows which approved teams serve each area, what help they can offer, and whether they have room for another request.
 
 10
-00:01:49.000 --> 00:01:57.000
-The product includes a user manual, test specification, and system design. Human responders own the final decisions.
+00:01:44.000 --> 00:01:58.000
+The training lab lets teams practice with a prepared fictional report. Process it once, then review the new case. That’s Pharos: a clearer handoff from a caller to the people who can help.
 

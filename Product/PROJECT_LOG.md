@@ -575,3 +575,14 @@ Append a dated note after each meaningful implementation session. Include what c
 - User requested guide branding “Ask Pharoh” (spelling preserved). Updated launcher, panel title, introduction and accessible labels; IDs, guide behavior and backend unchanged. Releasing via isolated checkout to exclude concurrent untracked pitch/gallery assets.
 
 - Ask Pharoh rename deployed clean from9eafba1 as rel_01M6Y15N4DMEZJQD6FMS8QMABK; liveHTMLverifiednewlabelandnooldguidebrand.29BeaconUItests pass.
+
+
+## November 8, 2026 — Mini: native full-screen current-UX demo remake
+
+- User requested another demo because previous framing, synthetic voice and legibility were unsatisfactory. Checked current UX/source/deployment with Micky and Donald; preserved latestbc76b0d profile-icon/tabbed UI and Pharos hostname.
+- Re-recorded native1920×1080 continuous app frames at20px reading size; all10 scenes checked for exact frame dimensions. Removed every external framing panel, added border and title strip. Optional player captions leave app text unobscured; added a full-screen button.
+- Replaced macOS Samantha narration with the warmer Jenny neural voice. Only generic public product text was sent for synthesis; no caller audio/transcript/credentials. Preserved original specifically consented real Photon excerpt and production completed transcript.
+- Workflow footage uses an isolated current-UI Miniflare/SQLite instance with fictional requests; no production call/case mutations. Captured current Overview/Review/Response/History tabs, reasoned acceptance, Sam assignment, explicit ETA/history, coverage/theme and prepared training submission. Unrelated production call-card content is masked.
+- New timeline118seconds, native1080p,30fps H.264CRF17/AAC160k; output about9MiB. No image scaling or letterboxing. Local preview initially failed because Miniflare needed the host checkout as cwd; the same compiled Worker passed backend tests and preview started from that directory. Media decode and hosted player/source checks follow publication.
+
+- Refined the call segment further: staged only the specifically publication-approved saved call/case snapshot in the isolated viewer, unchanged. Re-recorded Calls and linked-request navigation with a single clean call page, excluding all unrelated callers and competing synthetic call cards. Page/storyboard disclose this presentation copy; original audio remains real.

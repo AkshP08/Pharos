@@ -1,79 +1,80 @@
 {
-  "durationSeconds": 117,
-  "format": "1920x1080 H.264 with AAC narration, edited continuous CUA screen captures",
-  "screenCaptureRevision": "4f9bdc31de658368a873d3fc1f1cb4db6d673aa3",
-  "realCall": "Actual Photon SIP call with fictional scenario; completed status/transcript verified. Explicit publication consent; capture limited to12seconds; final excerpt10.5seconds. No full-call recording saved.",
-  "privacy": "Unrelated non-synthetic reports obscured; no credential or phone-number footage.",
+  "durationSeconds": 118,
+  "format": "Native1920\u00d71080 full-canvas H.264CRF17,30fps,AAC160k. No source-image scaling, side borders, custom framing panels or title strips.",
+  "voice": "en-US-JennyNeural, public generic narration only; actual consenting call audio reused unchanged except loudness/short fades.",
+  "uiRevision": "bc76b0d97145e904cf91401f3a99037d589d322f",
+  "environments": "Approved real-call saved snapshot verified in production and copied unchanged into isolated current app for clean display; fictional workflow actions in same app. No production case changes.",
+  "privacy": "Only explicitly approved call audio/transcript shown. Unrelated call records excluded from final recording dataset. No private contacts or credentials.",
   "scenes": [
     {
-      "name": "01-intro",
-      "seconds": 10,
-      "text": "Pharos turns a phone report into a shared response workflow. Beacon keeps reported urgency, service area, and human verification visible in one responder workspace.",
+      "name": "01-welcome",
+      "seconds": 9,
+      "text": "When someone needs help, a phone call should be enough. Pharos turns that call into a clear next step for responders.",
       "start": 0,
-      "end": 10
+      "end": 9
     },
     {
-      "name": "02-call",
+      "name": "02-real-call",
       "seconds": 14,
-      "text": "First, a real call with fictional scenario details.",
-      "start": 10,
-      "end": 24
+      "text": "Here\u2019s a short excerpt from a real call.",
+      "start": 9,
+      "end": 23
     },
     {
       "name": "03-transcript",
-      "seconds": 13,
-      "text": "After the call, Beacon shows its completed session and generated speaker transcript. Responders can inspect the caller's exact words and open the linked case.",
-      "start": 24,
-      "end": 37
-    },
-    {
-      "name": "04-case",
-      "seconds": 13,
-      "text": "The case preserves location, needs, and priority explanations. New reports can update urgency while retaining earlier history. Suggested ranking supports human decisions; it does not dispatch help.",
-      "start": 37,
-      "end": 50
-    },
-    {
-      "name": "05-training",
-      "seconds": 11,
-      "text": "The training lab accepts a prepared fictional transcript. One action processes it into a persistent case, making the intake workflow easy to rehearse without a phone call.",
-      "start": 50,
-      "end": 61
-    },
-    {
-      "name": "06-review",
-      "seconds": 13,
-      "text": "Content concerns appear beside reported danger. Normal assignment and arrival estimates stay on hold until a human reviews the current evidence. Concern signals are not proof of deception.",
-      "start": 61,
-      "end": 74
-    },
-    {
-      "name": "07-accept",
-      "seconds": 13,
-      "text": "Here, the reviewer records a reason and accepts the fictional report. An eligible responder can then claim ownership. Decisions remain tied to the evidence version and audit history.",
-      "start": 74,
-      "end": 87
-    },
-    {
-      "name": "08-progress",
       "seconds": 12,
-      "text": "The desk explicitly reports On the way and enters a fresh estimate. Claiming alone never confirms travel, and elapsed time never confirms arrival. Updated facts can require reassessment.",
-      "start": 87,
-      "end": 99
+      "text": "That call is now complete. The team can read the generated transcript, check consent, and open the linked request. Nothing has to be copied by hand.",
+      "start": 23,
+      "end": 35
+    },
+    {
+      "name": "04-overview",
+      "seconds": 10,
+      "text": "Overview brings the essentials together: where the caller is, what they need, and why the request is ranked this way. These are reported facts for people to review.",
+      "start": 35,
+      "end": 45
+    },
+    {
+      "name": "05-review",
+      "seconds": 13,
+      "text": "For this fictional training report, the team needs to check a concern. The quoted words stay beside the request. Reported danger keeps its urgency while normal response actions wait for human review.",
+      "start": 45,
+      "end": 58
+    },
+    {
+      "name": "06-assignment",
+      "seconds": 14,
+      "text": "The reviewer records a reason and accepts the report. Now an eligible responder can take ownership. That decision stays tied to the evidence, so everyone can see what was checked.",
+      "start": 58,
+      "end": 72
+    },
+    {
+      "name": "07-progress",
+      "seconds": 12,
+      "text": "Here, the desk reports that the responder is on the way and gives a ten-minute estimate. A claim alone never promises travel, and an estimate is not a guarantee.",
+      "start": 72,
+      "end": 84
+    },
+    {
+      "name": "08-history",
+      "seconds": 11,
+      "text": "History keeps the report and human decisions together. When new information arrives, the team can look back, reassess the situation, and update the next step.",
+      "start": 84,
+      "end": 95
     },
     {
       "name": "09-coverage",
-      "seconds": 10,
-      "text": "Coverage profiles show service areas, capabilities, availability, and capacity. New profiles require coordinator approval before they can receive cases.",
-      "start": 99,
-      "end": 109
+      "seconds": 9,
+      "text": "Coverage shows which approved teams serve each area, what help they can offer, and whether they have room for another request.",
+      "start": 95,
+      "end": 104
     },
     {
-      "name": "10-docs",
-      "seconds": 8,
-      "text": "The product includes a user manual, test specification, and system design. Human responders own the final decisions.",
-      "start": 109,
-      "end": 117
+      "name": "10-training",
+      "seconds": 14,
+      "text": "The training lab lets teams practice with a prepared fictional report. Process it once, then review the new case. That\u2019s Pharos: a clearer handoff from a caller to the people who can help.",
+      "start": 104,
+      "end": 118
     }
   ]
 }

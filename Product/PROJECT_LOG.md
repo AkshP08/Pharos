@@ -509,3 +509,5 @@ Append a dated note after each meaningful implementation session. Include what c
 - /demo is explicitly pending user feature confirmation, as requested. No video has been built or claimed yet.
 - Typecheck and production build passed. First test attempt was blocked by sandbox loopback restrictions; a concurrent deploy then replaced compiled test artifacts during an elevated rerun. Rebuilt and reran sequentially: all 243 JavaScript checks pass, zero failures. No runtime source defect was inferred from those environment failures. Fixed duplicate SVG marker IDs found by document validation.
 - Manual, tests and design were published to the existing DeepSpace app and visually inspected. Final source-stamp/access checks follow the clean release. Existing voice/phone acceptance gates remain distinct from documentation validation.
+
+- Transcript display now preserves existing speaker-turn line breaks in the case and evidence panels. Call-log transcripts already use pre-wrap. This is a presentation-only change; stored transcript content is unchanged.

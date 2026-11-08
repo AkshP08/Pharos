@@ -638,3 +638,6 @@ button:disabled { cursor: default; opacity: .55; transform: none; box-shadow: no
 .response-progress small { display: block; margin-top: 4px; color: #93a494; font-size: 7px; }
 .response-progress form > button { justify-self: start; min-height: 30px; font-size: 8px; }
 .response-progress > .response-progress-note { margin-top: 9px; padding-top: 8px; border-top: 1px solid #e0e9df; color: #9aab9b; font-size: 7px; }
+
+/* Keep speaker turns legible in case and evidence transcripts. */
+#caseMessage, #suspiciousText { white-space: pre-wrap; overflow-wrap: anywhere; }

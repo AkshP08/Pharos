@@ -520,6 +520,12 @@ Append a dated note after each meaningful implementation session. Include what c
 - Added /demo player, poster, built-in captions plus VTT, 12 feature chapter links, readable walkthrough and MP4 download. Captures depict the interface at recording time; coordinated against the separate UX redesign agent.
 - Video frames visually inspected for caption and evidence readability; duration/stream/decode and hosted playback/access checks are release gates.
 
+## 2026-11-08 — Backend and voice acceptance watcher checkpoint
+
+- Read the root-owned QA watcher's current status. Its backend source fingerprint matched the current Product backend and reported successful TypeScript checking, maintained-asset synchronization, compiled Worker build, generated-secret cleanup, and 211/211 compiled Worker tests. The same snapshot reported 108/108 offline voice checks and 47/47 Guard/Beacon UI contract checks.
+- This is automated local/compiled evidence only. It does not close the current-build Photon call, worsening-callback, spoken responder-update, or recorded-audio playback gates in `DELIVERY_CHECKLIST.md`.
+- No backend code changed in this checkpoint. The UX release is already live; its in-progress demo video was left untouched to avoid competing edits or publication.
+
 ## November 8, 2026 — Micky: modular responder UX
 
 - Ramped up from Mini and notified all other Codex chats in the HackUTD workspace of the authorized “UX ONLY CHANGES on LIVE SITE” release. Coordinated with Mini's isolated demo-video release to avoid overlapping deploys.
@@ -559,3 +565,5 @@ Append a dated note after each meaningful implementation session. Include what c
 - Newly consented actual Photon call completed; its five speaker turns and linked Northbank case were verified from the protected API. Only the approved call is used. Final video uses10.5seconds of actual caller/Pharos audio.
 - Replaced static slides with continuous CUA screen recording during real clicks and backend transitions. Filmed current readable4f9bdc3 UX: queue/navigation, completed call/transcript, linked case/history, prepared synthetic intake submission, quoted evidence/review hold, prefilled reason acceptance, eligible Sam Patel claim, explicit ten-minute desk estimate, coverage and docs. No filmed field-by-field typing. Unrelated non-synthetic report rows are obscured.
 - Synthesized Samantha narration with installed macOS voice; verified nonempty audio,117-second combined timeline,1080p H.264/AAC full decode. Updated player/chapters/captions/transcript/storyboard and navigation label. Recording-time UI is disclosed because Micky continued case-tab improvements afterward.
+
+- REAL callback acceptance PASSED: consenting SIP callback at16:13UTC completed with8turns and deliveryFailedfalse. It linked to the same original case, raised Urgent→Immediate, restored matched Northbank area, and retained2linked reports. Human-review requirement remained independent of urgency. No fabricated model/phone event was used. Pending final real PhoneB suspicious-request review check.

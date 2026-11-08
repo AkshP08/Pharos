@@ -293,3 +293,90 @@ Append a dated note after each meaningful implementation session. Include what c
 - Platform boundary check: Apple [Call Directory](https://developer.apple.com/documentation/callkit/identifying-and-blocking-calls) identifies/blocks by number; Android [CallScreeningService](https://developer.android.com/reference/android/telecom/CallScreeningService) receives limited call metadata and must respond before ringing, not a speech transcript.
 
 - No code, product UI, credentials, phone line, real audio, or resident data changed in this review. Waiting on product decisions before revising Flare/Beacon boundaries or claiming the scam-call flow works.
+
+
+## 2026-11-07 11:33 PM CST — Continuation audit, recovered backend, requirements, and responder-only direction
+
+### Handoff and Git recovery
+- Read the supplied pasted conversation, the actual preceding Codex chat including its failed backend-build turn, both project logs, project source/configuration, the voice-agent implementation, and the supplied challenge-reference materials.
+- The previous chat hit its usage limit after building a substantial backend locally and before its intended commit/deployment. The pasted handoff described an older static prototype, so treating it as the complete current state would have missed the recovered work.
+- Initially found the uncommitted Worker, SQLite Durable Object store, domain rules, voice agent, and backend-connected UI. Preserved that work and debugged it in place.
+- During this continuation the user committed/pushed the recovered work as `2a9ffd5` (`Improve hackathon app experience and functionality`), including the first fixes/tests made in this session. Fetched `origin` and confirmed local HEAD and `origin/main` both point to that commit. Current responder-only UI/documentation changes remain on top of it.
+- GitHub connector could not access the private repository. Used the existing authenticated Git remote instead; no branch reset, stash, or working-tree overwrite was needed.
+
+### Bugs found and fixed
+- Secured mode incorrectly protected every URL, including the HTML/JS/CSS needed to display the login screen. Restricted the session gate to API data routes; static app shell remains accessible while records still require authentication.
+- Successful sign-in left the dashboard hidden after the earlier unauthenticated load. Restored the dashboard after authentication; subsequently simplified it for the responder-only website decision.
+- Transcript parsing treated the workbench's `[Pharos] ...` / `[Caller] ...` labels without colons as caller speech. Now supports bracketed labels with or without a delimiter, plus ordinary `Pharos:` / `Caller:` labels. Added a regression check using the actual workbench format.
+- TypeScript check found a return-type mismatch between `ScamReview` and `Record<string, unknown>`. Corrected the declared return type and added an npm typecheck command.
+- The DeepSpace deployment health endpoint `/api/auth/ok` had become unreachable behind the general API 404/auth handling. Restored it as an unauthenticated GET and tested it in secured mode.
+- Transcript expiry scrubbed review snippets but left quoted evidence in the linked case's `scamSignals`. Added case-evidence scrubbing and verified expiry through the real local SQLite store.
+
+### Validation and tool struggles/workarounds
+- Added four local integration tests against the compiled Worker and SQLite-backed Durable Objects: static/login/API protection and tampered cookies; synthetic call/case/area/priority persistence; scam-only review without a help case; consent-gated ingest, fixture/live responder separation, preserving live-path fixtures during demo reset, and transcript/evidence expiry.
+- All four tests passed. Tests use fictional events and dummy credentials, never `.dev.vars`, actual audio, phone numbers, or external services. These results do not establish that Photon/LiveKit audio works.
+- `npm run typecheck`, production build, JavaScript syntax check, and Git whitespace check passed before the responder-only change; these are being rerun on the updated UI.
+- Miniflare's installed version is a v5 beta, while its bundled README shows the older constructor shape. Inspected installed type declarations and used its exported `convertV4MiniflareOptions` adapter for the test setup.
+- Miniflare requires a loopback socket; the filesystem/network sandbox blocked it with EPERM. Ran the local tests using an approved sandbox escalation, without live service credentials.
+- Wrangler tried to write debug logs outside the allowed workspace. Rebuilt with `WRANGLER_LOG_PATH` under `/tmp`; no need to weaken the sandbox or change user configuration. Confirmed no `.dev.vars` file remains in generated deployment output after the cleanup step.
+- Public web/curl checks could not retrieve the deployed app health route (web retrieval failed; sandbox DNS failed). Do not claim this continuation has verified or deployed the hosted backend.
+- A few official documentation URLs were unavailable or had moved. Used the official documentation index, current Photon Beta LiveKit cookbook, actual read-only account APIs, and current LiveKit pricing rather than guessing from old Spectrum-only docs.
+
+### Requirements re-read and corrected
+- Extracted text from all 123 pages of `Challenge Info/Public HackUTD Opening Ceremony Slides.pdf`, rendered every page and reviewed the visual sheets, then inspected relevant slides at full size. Reviewed all 15 local challenge photos/screenshots; they corroborate the sponsor challenge slides. Source references stay local and ignored by Git.
+- Important correction: the T-Mobile opening slide says **YOU CREATE THE DATA** and allows our own synthetic scam messages/scenarios, with no real customer data. The public challenge page mentions provided data/taxonomy/baseline, but waiting for those materials is not an implementation prerequisite.
+- T-Mobile requires safeguards and a customer-facing experience beyond classification, clear next steps, honest confidence, privacy, and detection quality. The real-call warning path and a measured synthetic evaluation are central, not just a responder-side text checker.
+- State Farm asks for urgent-need identification, assistance coordination, and ensuring nobody is overlooked. No required State Farm API is specified in the supplied prompt.
+- Photon requires a real Photon 2.0/API integration; its slides value integrated human collaboration, edge-case handling, and extensive meaningful use. A development MCP connection alone is not the integration.
+- Beginner/General remain intended targets. MLH slides list Gemini, MongoDB, Vultr, Tiger Data, Solana, domain, and other prizes; pursue only integrations that improve this product rather than adding unrelated features or migrating storage for a prize.
+
+### Latest user decisions
+- Final submission: **November 8 at 12:00 PM CST**. Initial Devpost entry already exists (user confirmed), resolving the inconsistent initial-deadline references in slides/public schedule.
+- **Responder website; resident phone hotline.** Removed the old resident form/view and audience switch locally. Added a phone-intake status panel to Beacon and kept the animated Pharaoh guide. No native mobile app rewrite has been selected.
+- Real consenting teammate calls with fictional scenarios are required; the old simulated-only preference is superseded. The user wants exact costs before provisioning. No number, paid plan, campaign, or paid voice service has been purchased.
+- Demo must cover both: (1) resident help call → short intake/STT → location-aware urgency case → responder claim; (2) routed scam call → ongoing transcript analysis of manipulation tactics → timely warning to the resident.
+- Explained that outbound disaster warnings mean proactive flood/evacuation broadcasts, separate from the requested in-call scam warning. No authoritative alert feed or broadcast workflow is selected.
+- For phone notifications, SMS can use the phone's messaging notification; installed native/PWA push is another option with permission and setup. Neither supplies arbitrary cellular-call audio. Recommended a dedicated Pharos-protected Photon number routed through LiveKit; a resident phone relay needs a second call leg. The user asked which is easier; recommended the dedicated number. Acceptance and detailed call topology remain to be finalized before provisioning.
+- Only Photon is currently set up. LiveKit Cloud project/credentials and its agent runtime are still absent.
+
+### Read-only account and pricing checks
+- Photon project `SignalBridge` exists; no resources/number and no default voice profile. Wallet still shows $100; current plan is Messaging Free with no base fee.
+- Photon lists $2/month per US number, $0.013 per billed US/Canada voice minute on Free, and $0.01 per SMS part plus carrier fees. Answered calls round up to whole minutes. A two-phone relay requires confirming both legs' costs.
+- Official Photon billing also lists $20 per 10DLC campaign registration submission and $15/month per activated campaign. External SMS eligibility, any brand fees, and approval timing remain unresolved; do not promise immediate SMS delivery or a $2 all-in setup.
+- LiveKit Build is listed at $0/month, with 1,000 third-party SIP minutes, 1,000 hosted-agent minutes, and $2.50 inference credit. These are separate allowances and still need checking in the team's new account. LLM/TTS model per-minute calculator figures are estimates, not an exact total.
+- Updated `PHOTON_SETUP.md` with the confirmed rates and unresolved items. Wallet coverage of one-off/upfront charges is not assumed.
+
+### Remaining engineering work and limits
+- The present voice agent is an active intake conversation; it is not yet a passive two-party scam-call bridge.
+- The Worker currently creates the scam review at call end. It has no streaming warning delivery, resident SMS/push sender, recipient binding, or retry/deduplication for alerts. Those must be built for the requested T-Mobile demo.
+- Add content-grounded psychological explanations (authority, scarcity/deadline, loss/threat, isolation, risky payment/code requests) tied to exact transcript spans. Distinguish legitimate emergency urgency, quoted scam reports, negation, and corrections. Do not infer intent from voice tone/accent or display an uncalibrated probability as confidence.
+- Voice delivery currently logs HTTP failures without retrying; call-event ordering/retry behavior and disconnect handling need stronger verification before real calls.
+- Priority/location extraction remains heuristic; first-answer matching and negation/correction behavior need evaluation. No manual priority override with a recorded reason is implemented. Response zones and seeded responders are fictional fixtures.
+- Transcript pruning is currently activity-triggered, not a scheduled deletion guarantee; finish scheduled expiry or revise the 24-hour promise before real data. No raw audio is stored by the Pharos Worker.
+- Responder access uses shared demo passwords, not individual organization/area access control. The service-area dropdown filters display; it is not per-responder authorization.
+- No live audio, production deployment, dispatch, arbitrary personal-call screening, or resident notification has been tested in this continuation yet.
+
+
+## 2026-11-07 11:35 PM CST — Verified responder-only UI against the local backend
+
+- Rebuilt and typechecked the code on top of the freshly fetched `2a9ffd5`; the recovered backend commit is the current remote/local main.
+- Started an isolated Miniflare preview using dummy responder/coordinator/ingest secrets and a static-asset binding pointed at the build. It reads no real `.dev.vars` or phone credentials.
+- Browser QA passed: unauthenticated page displayed the login screen; fictional responder sign-in revealed Beacon; processing the supplied bracketed synthetic conversation created a persisted fourth call/case, displayed its Riverbend area, immediate urgency explanation, and eligible responders. The resident form/audience switch are absent. Browser console reported no JavaScript errors.
+- Saved proof screenshot to `Product/screenshots/beacon-responder-backend-2026-11-07.jpg`. It shows the fictional-data queue and the new phone-intake status panel. This is a local test, not a production deployment or real audio test.
+- Updated the about page and setup/readme/plan documents to match responder-only scope and distinguish locally tested code from published behavior.
+- User explicitly requested continued detailed logs. Continue recording failures, workarounds, tests, plan changes, and unfinished integrations after each meaningful milestone.
+- Next account dependency: create the team's free LiveKit Cloud Build project, then securely configure its credentials locally. Next service decision: the dedicated protected Photon number is the recommended feasible route; no purchase is made while exact SMS eligibility/costs and number-credit treatment remain unresolved.
+
+
+## 2026-11-07 11:58 PM CST — LiveKit connected project, parallel implementation, billing gate, and commit policy
+
+- User created LiveKit project `p_570ptv6vlnd` (Pharos). Read-only dashboard inspection confirmed project URL `wss://pharos-dkmaw3b9.livekit.cloud`, SIP URI `sip:570ptv6vlnd.sip.livekit.cloud`, and no deployed agents. The existing API secret cannot be redisplayed through its key-actions menu.
+- Prepared ignored, owner-readable `Product/voice-agent/.env.local` with the connection URL and matching private Pharos ingest token. User will fill API key/secret locally; values stay out of chat/Git. Prepared random Worker auth/session/ingest secrets locally and added `.venv`/Python cache ignores.
+- Delegated bounded modules: pressure analysis/evaluation, voice-runtime reliability and guarded relay, responder workflows, factual transcript parsing, and PWA Web Push cryptography. Root owns integration/storage/auth/notifications/deployment and the canonical log.
+- Pressure module now has exact UTF-16 evidence spans and content-grounded psychology explanations, plus `shouldWarn`, descriptive confidence, and limitations. Five tests pass across 43 authored scenarios (24 warning,19 benign,0 false positives/negatives on this regression set only). This is not independent accuracy validation. Streaming setup→risky request escalation and protective negation are covered.
+- User authorized one Photon number and up to **$5 total of existing credit**, no out-of-pocket charges, no paid plan/campaign upgrade. Exact read-only quote: number costs $2, wallet credit covers $2, cash due $0, projected remaining wallet $98; recurring $2/month until released.
+- Attempted one US number purchase in supported Dallas area code469. Photon rejected it with `ENTITLEMENT_REQUIRED` (402) before creating a resource/operation. No charge, number, or plan change occurred. Investigating effective entitlements; the billing quote is not a provisioning-eligibility guarantee. Do not retry purchases blindly or upgrade outside the approved scope.
+- Real-time ingestion is being moved into atomic store events to make call start/turn/end idempotent, reject reordered/conflicting events, publish partial intake cases, and create separate resident warnings during speech. Guard calls cannot become help cases. Scheduled transcript expiry is being added instead of only pruning on activity.
+- SMS runtime contract verified against official Photon Beta SDK: Bearer API at api.photon.codes/v1, User IDs (not resource IDs), canonical recipient Spaces, stable idempotency keys, plain-text content envelope, and HTTP202 as accepted rather than delivered. Ordinary external numbers may require campaign eligibility; account-phone verification is not a documented exemption.
+- User requested thorough independent QA subagents and a product judge. Queuing these as implementation slots free; reviewers will not edit implementation or commit. Root will fix findings and record dispositions.
+- User explicitly requested every change committed in task-sized chunks, with no ChatGPT/Codex/Claude contributor metadata. Verified existing author/committer is the user's configured Git identity. Do not add AI coauthor trailers or impersonate another identity. First chunk is the standalone tested pressure module/fixtures/tests plus this checkpoint; remaining in-progress changes will be committed after integration checks.

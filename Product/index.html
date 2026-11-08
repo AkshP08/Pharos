@@ -440,6 +440,78 @@
       apply();
     })();
     </script>
+
+    <script>
+    // Case tabs reuse original elements; no records, form state or handlers are copied.
+    (() => {
+      const card = document.querySelector('.case-panel');
+      const context = document.createElement('div');
+      context.className = 'case-at-glance';
+      context.innerHTML = '<div><small>REPORTED PRIORITY</small><strong id="casePriorityReadout"></strong></div><button type="button" id="caseReviewShortcut" aria-label="Open case review"><small>INTAKE REVIEW</small><strong id="caseReviewReadout"></strong><span aria-hidden="true">→</span></button>';
+      const tablist = document.createElement('div');
+      tablist.className = 'case-detail-tabs';
+      tablist.setAttribute('role', 'tablist');
+      tablist.setAttribute('aria-label', 'Selected case details');
+      const layout = [
+        ['overview','Overview',['.case-update-summary','.priority-explainer','.safe-note']],
+        ['transcript','Transcript & audio',['.case-summary','.message-quote','#caseAudioPanel']],
+        ['review','Review',['#integrityPanel','#priorityReview']],
+        ['response','Response',['.case-bottom-actions','#caseOwner','#assignmentReviewNote','#releaseAssignmentButton','#responseProgressPanel']],
+        ['history','History',['#caseHistory']]
+      ];
+      const panels = new Map();
+      const buttons = new Map();
+      let current = 'overview';
+      let caseId = '';
+      const descriptions = {overview:'Reported needs and latest case update.', transcript:'The caller’s words and available consented audio.', review:'Inspect evidence and record human review decisions.', response:'Manage ownership and report explicit desk progress.', history:'Earlier reports, priority changes, and review decisions.'};
+      card.insertBefore(context, document.querySelector('#caseReassessment'));
+      card.insertBefore(tablist, document.querySelector('#caseReassessment'));
+      layout.forEach(([key,label,selectors]) => {
+        const button = document.createElement('button');
+        button.type = 'button'; button.id = `case-tab-${key}`; button.textContent = label;
+        button.setAttribute('role','tab'); button.setAttribute('aria-controls',`case-panel-${key}`);
+        const panel = document.createElement('section');
+        panel.id = `case-panel-${key}`; panel.className = 'case-detail-panel';
+        panel.setAttribute('role','tabpanel'); panel.setAttribute('aria-labelledby',button.id);
+        panel.tabIndex = 0;
+        const intro = document.createElement('p'); intro.className='case-tab-intro'; intro.textContent=descriptions[key]; panel.append(intro);
+        selectors.forEach(selector => panel.append(card.querySelector(selector)));
+        if (key === 'response') {
+          const reminder = document.createElement('button'); reminder.type='button'; reminder.className='case-response-review-link'; reminder.textContent='Check intake review before responding →';
+          reminder.addEventListener('click', () => show('review',true)); panel.insertBefore(reminder,intro.nextSibling);
+        }
+        button.addEventListener('click', () => show(key,true));
+        tablist.append(button); card.append(panel); panels.set(key,panel); buttons.set(key,button);
+      });
+      function show(key,focus = false) {
+        current = panels.has(key) ? key : 'overview';
+        panels.forEach((panel,id) => panel.hidden = id !== current);
+        buttons.forEach((button,id) => { button.setAttribute('aria-selected', String(id === current)); button.tabIndex=id === current ? 0 : -1; });
+        if (current === 'history') document.getElementById('caseHistory').open = true;
+        if (focus) buttons.get(current).focus({preventScroll:true});
+      }
+      document.getElementById('caseReviewShortcut').addEventListener('click', () => show('review',true));
+      document.getElementById('reviewNewFactsButton').addEventListener('click', () => show('review'),true);
+      tablist.addEventListener('keydown',event => {
+        const keys=[...buttons.keys()]; const index=keys.indexOf(current); let next;
+        if(event.key==='ArrowRight')next=(index+1)%keys.length;
+        if(event.key==='ArrowLeft')next=(index+keys.length-1)%keys.length;
+        if(event.key==='Home')next=0;
+        if(event.key==='End')next=keys.length-1;
+        if(next!==undefined){event.preventDefault();show(keys[next],true);}
+      });
+      function syncContext() {
+        const nextCase = document.getElementById('caseId').textContent;
+        if (nextCase !== caseId) { caseId=nextCase; show('overview'); }
+        document.getElementById('casePriorityReadout').textContent=document.getElementById('priorityLabel').textContent;
+        document.getElementById('caseReviewReadout').textContent=document.getElementById('integrityBadge').textContent;
+        context.dataset.review=document.getElementById('integrityBadge').textContent;
+      }
+      const observer=new MutationObserver(syncContext);
+      ['caseId','priorityLabel','integrityBadge'].forEach(id => observer.observe(document.getElementById(id),{childList:true,characterData:true,subtree:true}));
+      syncContext(); show('overview');
+    })();
+    </script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -819,3 +819,65 @@ button:disabled { cursor: default; opacity: .55; transform: none; box-shadow: no
 .modular-desk .responder-select { width: 100%; flex: 1 1 100%; }
 .modular-desk .strip-metric { overflow-wrap: anywhere; }
 @media (max-width: 680px) { .modular-desk .strip-metric small { font-size: max(14px,calc(var(--reading-font) - 6px)); } }
+
+/* Compact case workspace: stable context, one task panel at a time. */
+.case-at-glance { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0; }
+.case-at-glance > div, .case-at-glance > button { position: relative; padding: 12px; border: 1px solid #c4d6df; border-radius: 8px; background: #edf5f7; text-align: left; color: #18394a; }
+.case-at-glance small { display: block; font-size: 11px !important; letter-spacing: .5px; font-weight: 700; }
+.case-at-glance strong { display: block; font-size: 15px; line-height: 1.6; margin-top: 4px; }
+.case-at-glance button { padding-right: 26px; }
+.case-at-glance button > span { position: absolute; right: 10px; top: 40%; }
+.case-detail-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; margin-bottom: 14px; background: #e9eff4; border-radius: 8px; }
+.modular-desk #beaconView .case-detail-tabs button { flex: 1 1 auto; min-height: 42px; padding: 9px 12px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #355165; font-size: 14px; font-weight: 700; }
+.modular-desk #beaconView .case-detail-tabs button[aria-selected="true"] { background: white; color: #134e56; border-color: #b8cdd6; box-shadow: 0 1px 3px #122f3b12; }
+.case-detail-panel { max-height: min(68vh,700px); overflow-y: auto; overflow-x: hidden; padding: 0 6px 6px 0; scrollbar-gutter: stable; }
+.modular-desk #beaconView .case-tab-intro { font-size: 14px; color: #526979; margin: 0 0 14px; }
+.case-detail-panel > :is(.priority-explainer,.case-update-summary,.message-quote,.integrity-panel,.caller-audio,.response-progress,.case-history,.priority-review) { margin-top: 12px; }
+.case-detail-panel .case-summary { margin-top: 0; }
+.case-detail-panel .case-history { border: 0; background: transparent; }
+.case-detail-panel .case-history > summary { display: none; }
+.case-response-review-link { background: #e9f2f5; color: #194f65; border: 1px solid #bfd2dc; padding: 10px 12px; border-radius: 6px; text-align: left; }
+.modular-desk .case-panel .case-head { gap: 12px; }
+.modular-desk .case-panel .case-location { flex-wrap: wrap; gap: 6px; line-height: 1.6; }
+.modular-desk .case-panel #caseMessage { max-height: 300px; }
+@media(max-width:680px) {
+  .case-at-glance { grid-template-columns: 1fr; }
+  .case-detail-tabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .case-detail-tabs button:first-child { grid-column: 1 / -1; }
+  .case-detail-panel { max-height: 65vh; }
+}
+
+/* Complete dark palette, including all status surfaces and their descendants. */
+.modular-desk.dark-theme { --dark-text: #e8f0f7; --dark-muted: #bed0df; --dark-border: #536b80; }
+.modular-desk.dark-theme #beaconView :where(*) { color: inherit !important; }
+.modular-desk.dark-theme #beaconView { color: var(--dark-text); }
+.modular-desk.dark-theme :is(.panel,.workspace-toolbar,.signal-strip,.library-menu summary,.library-menu nav,.login-card,.guide-panel,.guide-head,.guide-form) { background: #182838; border-color: var(--dark-border); color: var(--dark-text); }
+.modular-desk.dark-theme #beaconView :is(.request-card,.call-session-card,.responder-profile,.case-update-summary,.case-history-entry,.caller-audio,.suspicious-message,.trace-results,.priority-review,.response-progress,.integrity-panel,.case-reassessment,.backend-result,.analysis-output,.message-quote,.safe-action) { background: #21374a; border-color: var(--dark-border); color: var(--dark-text) !important; }
+.modular-desk.dark-theme #beaconView :is(.integrity-reason,.response-progress-eta,.case-update-count,.history-priority,.reported-chip-row span,.reporter-avatar,.strip-icon,.priority-symbol,.pressure-icon,.sms-icon,.safe-action-icon,.trace-count,.request-preview,.safe-note,.human-check,.case-history > summary span,.count-badge,.demo-label) { background: #2b465b; color: #eff8ff !important; border-color: #7895aa; }
+.modular-desk.dark-theme #beaconView :is(.priority-explainer,.assignment-review-note,.integrity-hold-note,.live-warning-card,.case-reassessment.reassessment-needed,.integrity-panel.integrity-review-required,.integrity-panel.integrity-pending,.integrity-panel.integrity-dismissed,.response-progress.progress-review-needed,.response-progress.progress-delayed,.response-progress.progress-unable) { background: #3b3020; color: #ffedc7 !important; border-color: #b69661; }
+.modular-desk.dark-theme #beaconView :is(.integrity-queue-badge,.tag,.risk-badge,.report-status,.unverified-badge,.synthetic-case-label) { background: #32495f; color: #f1f7fc !important; border-color: #86a1b8; }
+.modular-desk.dark-theme #beaconView :is(.tag-critical,.integrity-review-required,.integrity-dismissed) { background: #5b3035; color: #ffe9e8 !important; border-color: #dc9ca4; }
+.modular-desk.dark-theme #beaconView :is(.integrity-clear,.integrity-accepted) { background: #1c4e43; color: #d6ffeb !important; border-color: #7fc4a5; }
+.modular-desk.dark-theme #beaconView :is(.request-card.selected,.request-card:hover) { background: #215451; border-color: #a2e4d9; }
+.modular-desk.dark-theme :is(input,select,textarea) { background: #0e1e2c !important; color: #f2f7fc !important; border: 1px solid #8ca5b9 !important; }
+.modular-desk.dark-theme ::placeholder { color: #bbcad7; opacity: 1; }
+.modular-desk.dark-theme :is(button,.button,.text-button,.icon-button,.library-menu summary) { color: #e9f2fa; }
+.modular-desk.dark-theme #beaconView :is(.button-quiet,.text-button,.case-response-review-link), .modular-desk.dark-theme :is(.display-controls button,.list-pagination button,.library-menu nav button,.guide-topics button,.help-button) { background: #2a4359; color: #f1f7fc !important; border: 1px solid #809bb1; }
+.modular-desk.dark-theme #beaconView .button-primary, .modular-desk.dark-theme .workspace-toolbar a.active { background: #8ce2d3; color: #102e33 !important; border-color: #b5f6eb; }
+.modular-desk.dark-theme #beaconView .button-primary :where(*) { color: inherit !important; }
+.modular-desk.dark-theme #beaconView a, .modular-desk.dark-theme .library-menu nav a { color: #a9f0e5 !important; }
+.modular-desk.dark-theme #beaconView :is(button:disabled,.button:disabled), .modular-desk.dark-theme .display-controls button:disabled { opacity: 1; background: #283746; color: #afc0cf !important; border-color: #576a7a; cursor: not-allowed; box-shadow: none; }
+.modular-desk.dark-theme #beaconView button:disabled :where(*) { color: inherit !important; }
+.modular-desk.dark-theme .case-at-glance > div, .modular-desk.dark-theme .case-at-glance > button { background: #223f54; color: #eff8ff !important; border-color: #789aaf; }
+.modular-desk.dark-theme .case-detail-tabs { background: #0e1e2c; }
+.modular-desk.dark-theme #beaconView .case-detail-tabs button { background: transparent; color: #cfe0ed !important; }
+.modular-desk.dark-theme #beaconView .case-detail-tabs button[aria-selected="true"] { background: #8ce2d3; color: #102e33 !important; border-color: #c0fff3; }
+.modular-desk.dark-theme #beaconView :is(.queue-tab,.workspace-tabs button) { background: transparent; color: #d0e1ef !important; }
+.modular-desk.dark-theme #beaconView .queue-tab.selected { background: #345f67; color: #fff !important; }
+.modular-desk.dark-theme #beaconView :is(.case-tab-intro,.panel-kicker,.pagination-status,.queue-section-label,.request-meta,.call-session-meta) { color: var(--dark-muted) !important; }
+.modular-desk.dark-theme :is(.refresh-icon,.nav-icon,.pin-icon,.lock-icon,.quote-mark,.info-icon,.chevron,.help-button,.guide-head button,.close-tool) { color: #c3edea !important; }
+.modular-desk.dark-theme .guide-bubble { background: #233d50; color: #eef7ff; }
+.modular-desk.dark-theme .guide-user { background: #27584f; }
+.modular-desk.dark-theme :focus-visible { outline: 3px solid #ffe08a; outline-offset: 3px; }
+.modular-desk.dark-theme #beaconView .workspace-toolbar a.active { color: #102e33 !important; }
+.modular-desk.dark-theme .demo-pill { background: #223f54; color: #edf7ff; border-color: #829db2; }

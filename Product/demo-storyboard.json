@@ -1,186 +1,79 @@
 {
-  "durationSeconds": 140,
-  "format": "1920x1080 H.264, 24fps, no audio stream",
-  "method": "Edited actual Beacon screenshots from isolated local runtime. Fictional intake and deterministic review fixtures; no real call or model inference.",
+  "durationSeconds": 117,
+  "format": "1920x1080 H.264 with AAC narration, edited continuous CUA screen captures",
+  "screenCaptureRevision": "4f9bdc31de658368a873d3fc1f1cb4db6d673aa3",
+  "realCall": "Actual Photon SIP call with fictional scenario; completed status/transcript verified. Explicit publication consent; capture limited to12seconds; final excerpt10.5seconds. No full-call recording saved.",
+  "privacy": "Unrelated non-synthetic reports obscured; no credential or phone-number footage.",
   "scenes": [
     {
-      "duration": 8,
-      "title": "Help starts with a report.",
-      "label": "PHAROS / BEACON",
-      "body": "A silent product walkthrough",
-      "caption": "Fictional data \u2022 isolated local workspace \u2022 edited screen captures",
-      "file": null,
+      "name": "01-intro",
+      "seconds": 10,
+      "text": "Pharos turns a phone report into a shared response workflow. Beacon keeps reported urgency, service area, and human verification visible in one responder workspace.",
       "start": 0,
-      "end": 8
+      "end": 10
     },
     {
-      "duration": 12,
-      "title": "See who needs attention.",
-      "label": "01 / URGENCY QUEUE",
-      "body": "Reported needs set the suggested order. Service-area filters help responders focus.",
-      "caption": "Every report keeps its urgency rank. Humans confirm the response.",
-      "file": "01-queue",
-      "crop": [
-        285,
-        407,
-        1244,
-        1030
-      ],
-      "start": 8,
-      "end": 20
+      "name": "02-call",
+      "seconds": 14,
+      "text": "First, a real call with fictional scenario details.",
+      "start": 10,
+      "end": 24
     },
     {
-      "duration": 10,
-      "title": "Turn words into a case.",
-      "label": "02 / FICTIONAL INTAKE",
-      "body": "Process a sample transcript through the backend. Three people. A specific landmark. A shelter need.",
-      "caption": "This is sample text processing, not a phone call or speech-recognition result.",
-      "file": "02-intake",
-      "crop": [
-        285,
-        1772,
-        1244,
-        2120
-      ],
-      "start": 20,
-      "end": 30
+      "name": "03-transcript",
+      "seconds": 13,
+      "text": "After the call, Beacon shows its completed session and generated speaker transcript. Responders can inspect the caller's exact words and open the linked case.",
+      "start": 24,
+      "end": 37
     },
     {
-      "duration": 10,
-      "title": "Keep the facts visible.",
-      "label": "03 / STRUCTURED REQUEST",
-      "body": "Beacon preserves the caller\u2019s words and location, then explains suggested urgency and coverage.",
-      "caption": "No supported concern does not verify identity or establish that a report is true.",
-      "file": "03-created",
-      "crop": [
-        695,
-        407,
-        1244,
-        715
-      ],
-      "start": 30,
-      "end": 40
+      "name": "04-case",
+      "seconds": 13,
+      "text": "The case preserves location, needs, and priority explanations. New reports can update urgency while retaining earlier history. Suggested ranking supports human decisions; it does not dispatch help.",
+      "start": 37,
+      "end": 50
     },
     {
-      "duration": 8,
-      "title": "Start with the current need.",
-      "label": "04 / EVOLVING CASE",
-      "body": "A fictional caller reports three people safely waiting for shelter near Riverbend footbridge.",
-      "caption": "From here, call events and review results are controlled local fixtures. No phone or model service is invoked.",
-      "file": "04-before",
-      "crop": [
-        695,
-        407,
-        1244,
-        710
-      ],
-      "start": 40,
-      "end": 48
+      "name": "05-training",
+      "seconds": 11,
+      "text": "The training lab accepts a prepared fictional transcript. One action processes it into a persistent case, making the intake workflow easy to rehearse without a phone call.",
+      "start": 50,
+      "end": 61
     },
     {
-      "duration": 12,
-      "title": "Let new danger change priority.",
-      "label": "05 / WORSENING CALLBACK",
-      "body": "The same fictional situation now includes rising indoor water and no safe exit. The continuing case is reassessed.",
-      "caption": "Fresh consent + explicit same-situation intent + matching location allow conservative linkage.",
-      "file": "05-worsening",
-      "crop": [
-        695,
-        407,
-        1244,
-        811
-      ],
-      "start": 48,
-      "end": 60
+      "name": "06-review",
+      "seconds": 13,
+      "text": "Content concerns appear beside reported danger. Normal assignment and arrival estimates stay on hold until a human reviews the current evidence. Concern signals are not proof of deception.",
+      "start": 61,
+      "end": 74
     },
     {
-      "duration": 12,
-      "title": "Preserve how the situation changed.",
-      "label": "06 / CASE HISTORY",
-      "body": "Two linked reports remain available. The latest facts guide the current response without erasing the earlier report.",
-      "caption": "Unknown or ambiguous matches stay separate. Caller ID is not proof of identity.",
-      "file": "06-history",
-      "key": "caseHistory",
-      "start": 60,
-      "end": 72
+      "name": "07-accept",
+      "seconds": 13,
+      "text": "Here, the reviewer records a reason and accepts the fictional report. An eligible responder can then claim ownership. Decisions remain tied to the evidence version and audit history.",
+      "start": 74,
+      "end": 87
     },
     {
-      "duration": 14,
-      "title": "Hold response for human review.",
-      "label": "07 / EVIDENCE AND REVIEW",
-      "body": "A fictional unsafe request has exact quoted evidence. Normal assignment and ETA are held; verification ownership remains possible.",
-      "caption": "Content concerns do not lower urgency or erase reported danger. This review result is a fixed fixture.",
-      "file": "07-review",
-      "key": "integrityPanel",
-      "start": 72,
-      "end": 86
+      "name": "08-progress",
+      "seconds": 12,
+      "text": "The desk explicitly reports On the way and enters a fresh estimate. Claiming alone never confirms travel, and elapsed time never confirms arrival. Updated facts can require reassessment.",
+      "start": 87,
+      "end": 99
     },
     {
-      "duration": 10,
-      "title": "Make the decision accountable.",
-      "label": "08 / REASONED ACCEPTANCE",
-      "body": "The reviewer records a reason against the current evidence before accepting the report for response.",
-      "caption": "This is a fictional reviewer action. Acceptance authorizes response work; it does not certify truth.",
-      "file": "08-decision",
-      "key": "integrityPanel",
-      "start": 86,
-      "end": 96
+      "name": "09-coverage",
+      "seconds": 10,
+      "text": "Coverage profiles show service areas, capabilities, availability, and capacity. New profiles require coordinator approval before they can receive cases.",
+      "start": 99,
+      "end": 109
     },
     {
-      "duration": 8,
-      "title": "Acceptance opens the next step.",
-      "label": "09 / ELIGIBLE RESPONSE",
-      "body": "The decision is recorded with its evidence scope. Coverage and responder eligibility still require confirmation.",
-      "caption": "New concerns can require review again. Old reassurance does not automatically return.",
-      "file": "09-accepted",
-      "key": "integrityPanel",
-      "start": 96,
-      "end": 104
-    },
-    {
-      "duration": 8,
-      "title": "Claiming establishes ownership.",
-      "label": "10 / RESPONDER ASSIGNMENT",
-      "body": "An approved fictional team claims the accepted case. A claim alone does not confirm travel or arrival.",
-      "caption": "Eligibility checks include area, capability, availability, approval, and capacity.",
-      "file": "10-claimed",
-      "key": "responseProgressPanel",
-      "padtop": 45,
-      "start": 104,
-      "end": 112
-    },
-    {
-      "duration": 8,
-      "title": "Report an estimate explicitly.",
-      "label": "11 / DESK-REPORTED PROGRESS",
-      "body": "Choose On the way and enter a fresh ten-minute estimate. The desk owns the status update.",
-      "caption": "On the way and Delayed require a current estimate of 1\u2013180 minutes.",
-      "file": "11-eta-form",
-      "key": "responseProgressPanel",
-      "start": 112,
-      "end": 120
-    },
-    {
-      "duration": 12,
-      "title": "Be precise about reassurance.",
-      "label": "12 / CURRENT STATUS",
-      "body": "Beacon shows who reported the update and when. Arrival remains an estimate; time passing never confirms arrival.",
-      "caption": "During an active real intake, only a current server-authored desk update can be spoken. No audio is demonstrated here.",
-      "file": "12-progress",
-      "key": "responseProgressPanel",
-      "padtop": 40,
-      "start": 120,
-      "end": 132
-    },
-    {
-      "duration": 8,
-      "title": "Human decisions. Clear evidence.",
-      "label": "PHAROS / PRODUCT LIBRARY",
-      "body": "Explore the manual, test cases, and system design on the product website.",
-      "caption": "HackUTD prototype \u2022 fictional walkthrough \u2022 no real dispatch or phone/model acceptance claimed",
-      "file": null,
-      "start": 132,
-      "end": 140
+      "name": "10-docs",
+      "seconds": 8,
+      "text": "The product includes a user manual, test specification, and system design. Human responders own the final decisions.",
+      "start": 109,
+      "end": 117
     }
   ]
 }

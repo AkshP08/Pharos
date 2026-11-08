@@ -83,6 +83,7 @@ class Settings:
     allow_browser_tests: bool = False
     max_call_seconds: int = 180
     semantic_guard_review: bool = True
+    managed_cloud: bool = False
 
     @classmethod
     def from_env(cls, environ: dict[str, str]) -> Settings:
@@ -108,6 +109,9 @@ class Settings:
             allow_browser_tests=environ.get("PHAROS_ALLOW_BROWSER_TESTS") == "true",
             max_call_seconds=int(environ.get("PHAROS_MAX_CALL_SECONDS", "180")),
             semantic_guard_review=environ.get("PHAROS_SEMANTIC_GUARD_REVIEW", "true") == "true",
+            # Match the SDK's hosted-worker marker; retain only a boolean, never
+            # the token itself. Deployment name can be empty in production.
+            managed_cloud=bool(environ.get("LIVEKIT_WORKER_TOKEN", "").strip()),
         )
 
     def validate(self) -> None:
@@ -124,8 +128,22 @@ class Settings:
             raise ConfigurationError("PHAROS_API_URL must be a plain origin without credentials or query parameters")
         if parsed.scheme != "https" and not (parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}):
             raise ConfigurationError("PHAROS_API_URL must use HTTPS, except for loopback development")
-        if not self.livekit_url.startswith("wss://"):
-            raise ConfigurationError("LIVEKIT_URL must use wss://")
+        scheme, loopback, valid_url = "other", False, False
+        try:
+            livekit = urlparse(self.livekit_url)
+            scheme = livekit.scheme if livekit.scheme in {"wss", "ws", "http", "https"} else "other"
+            loopback = livekit.hostname in {"localhost", "127.0.0.1", "::1"}
+            valid_url = (bool(livekit.hostname) and livekit.username is None and livekit.password is None
+                         and "?" not in self.livekit_url and "#" not in self.livekit_url
+                         and not any(character.isspace() or ord(character) < 32 for character in self.livekit_url))
+            livekit.port  # Validate port syntax without retaining/logging it.
+        except ValueError:
+            valid_url = False
+        # Managed LiveKit containers use a trusted loopback gateway. Public and
+        # ordinary local configurations must still use encrypted WebSockets.
+        allowed_transport = scheme == "wss" or (self.managed_cloud and loopback and scheme in {"ws", "http"})
+        if not valid_url or not allowed_transport:
+            raise ConfigurationError(f"LIVEKIT_URL invalid (scheme={scheme}, loopback={str(loopback).lower()}, managed={str(self.managed_cloud).lower()})")
         if self.mode not in {"intake", "guard"}:
             raise ConfigurationError("PHAROS_CALL_MODE must be intake or guard")
         if not self.test_caller_numbers and not self.allow_browser_tests:

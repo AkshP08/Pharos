@@ -57,6 +57,47 @@ class ConfigurationTests(unittest.TestCase):
             replace(self.settings, api_url="http://public.example").validate()
         replace(self.settings, api_url="http://127.0.0.1:8786").validate()
 
+    def test_managed_marker_requires_nonempty_worker_token_not_deployment_name(self):
+        self.assertFalse(Settings.from_env({}).managed_cloud)
+        self.assertFalse(Settings.from_env({'LIVEKIT_WORKER_TOKEN': '  ', 'LIVEKIT_AGENT_DEPLOYMENT': 'production'}).managed_cloud)
+        managed = Settings.from_env({'LIVEKIT_WORKER_TOKEN': 'fictional-worker-token', 'LIVEKIT_AGENT_DEPLOYMENT': ''})
+        self.assertTrue(managed.managed_cloud)
+        self.assertNotIn('fictional-worker-token', repr(managed))
+
+    def test_livekit_allows_only_marked_exact_loopback_gateway_over_ws_or_http(self):
+        for url in ('ws://localhost:7880', 'http://127.0.0.1:7880', 'ws://[::1]:7880', 'http://[::1]:7880'):
+            with self.subTest(url=url):
+                with self.assertRaises(ConfigurationError):
+                    replace(self.settings, livekit_url=url).validate()
+                replace(self.settings, livekit_url=url, managed_cloud=True).validate()
+        for managed in (False, True):
+            replace(self.settings, livekit_url='wss://public.example:443', managed_cloud=managed).validate()
+            for url in ('ws://public.example', 'http://public.example', 'https://public.example',
+                        'ws://10.0.0.1:7880', 'http://gateway.internal:7880', 'ws://127.0.0.2:7880',
+                        'http://localhost.example:7880'):
+                with self.subTest(url=url, managed=managed):
+                    with self.assertRaises(ConfigurationError):
+                        replace(self.settings, livekit_url=url, managed_cloud=managed).validate()
+
+    def test_livekit_rejects_url_credentials_query_fragment_and_empty_host_without_leaking(self):
+        private = 'fictional-private-value'
+        urls = (f'wss://{private}@public.example', f'ws://:{private}@localhost:7880',
+                f'wss://public.example?token={private}', f'http://localhost:7880#{private}',
+                'wss://', 'http://', 'wss:///missing-host', 'wss://public.example?',
+                'wss://public.example#', 'ws://[broken', 'wss://public.example:invalid')
+        for url in urls:
+            with self.subTest(url=url):
+                with self.assertRaises(ConfigurationError) as raised:
+                    replace(self.settings, livekit_url=url, managed_cloud=True).validate()
+                self.assertNotIn(private, str(raised.exception))
+                self.assertNotIn('public.example', str(raised.exception))
+                self.assertRegex(str(raised.exception), r'^LIVEKIT_URL invalid \(scheme=(?:wss|ws|http|https|other), loopback=(?:true|false), managed=true\)$')
+
+    def test_managed_livekit_exception_does_not_weaken_public_backend_https(self):
+        with self.assertRaises(ConfigurationError):
+            replace(self.settings, managed_cloud=True, livekit_url='http://localhost:7880',
+                    api_url='http://public.example').validate()
+
     def test_guard_is_off_until_explicitly_configured(self):
         with self.assertRaises(ConfigurationError):
             replace(self.settings, mode="guard").validate()

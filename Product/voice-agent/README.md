@@ -5,7 +5,7 @@ The runtime has two modes for consenting teammates using fictional scenarios:
 - **Intake:** Photon SIP caller → LiveKit STT and short spoken intake → consented finalized text → Pharos → Beacon case. A human responder owns prioritization and real-world action.
 - **Guard:** Photon protected number → consent gate → second SIP leg to a fixed, pre-consenting resident test phone. Only the incoming caller's track is transcribed. Pharos analyzes each finalized utterance and can return a recipient warning before the call ends. Guard calls must be stored as `purpose=guard`, never help cases.
 
-The guard relay is implemented but has **not been tested against a real trunk or phone**. Its outbound dialing is disabled by default. No account, number, SIP trunk, paid plan, or phone call is provisioned by this repository.
+The guard relay is implemented but has **not been tested against a real trunk or phone**. Its outbound dialing is disabled by default. Starting the runtime does not buy a number, upgrade a plan, or place a call. The separate, explicit SIP setup command below configures an existing LiveKit project and an already purchased Photon number.
 
 For repeat help calls, the intake asks whether a caller who is calling back means the same situation or a new request, then collects their current location and needs. No name, case number, or particular phrase is required to receive help. The agent does not retrieve or read previous case facts; a fresh danger report is included even if an older request exists.
 
@@ -17,7 +17,7 @@ Use Python 3.11+ (the local tests used Python 3.13 and LiveKit Agents 1.8.11). F
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install 'httpx>=0.27,<1' 'livekit-agents~=1.8.11' 'python-dotenv>=1,<2'
+.venv/bin/python -m pip install 'httpx>=0.27,<1' 'livekit-agents~=1.8.11' 'python-dotenv>=1,<2' 'truststore>=0.10,<1'
 cp .env.local.example .env.local
 ```
 
@@ -35,6 +35,26 @@ Check configuration without contacting any service, then start the agent:
 If `uv` is installed, `uv sync` and `uv run python agent.py dev` are equivalent. Model calls use LiveKit Inference and its available account credits/limits; they are not free merely because the runtime starts locally. The default model IDs are Deepgram Nova-3, Gemma 4 31B, and Fish Audio S2.1 Pro; override them through the example env settings if needed.
 
 Configure the Photon default Voice profile, an authenticated LiveKit inbound SIP trunk, and an individual-room dispatch rule launching the configured `PHAROS_AGENT_NAME` (default `pharos-intake`). Use the current [Photon LiveKit cookbook](https://photon.codes/docs/beta/cookbooks/voice/livekit). Prefer compatible TLS/SRTP settings on both sides. The development MCP connection is not the website's runtime credentials.
+
+### Local SIP setup and phone-call worker
+
+From the repository root, inspect or explicitly create only the scoped inbound trunk and individual dispatch rule for the already purchased hotline:
+
+```sh
+Product/voice-agent/.venv/bin/python Product/voice-agent/setup_inbound.py --number +16179939206
+Product/voice-agent/.venv/bin/python Product/voice-agent/setup_inbound.py --number +16179939206 --apply
+```
+
+The script never purchases a number, places a call, creates an outbound trunk, or upgrades an account. Generated Digest credentials stay in ignored `Product/voice-agent/.env.sip.local`, with file permissions `0600`; it prints only resource IDs, configuration status, and that file's path. Configure the Photon Voice profile's inbound destination as `sips:570ptv6vlnd.sip.livekit.cloud` with **TLS**, enter the private file's `PHAROS_LIVEKIT_SIP_USERNAME` and `PHAROS_LIVEKIT_SIP_PASSWORD` locally, and use media encryption **Auto**. The LiveKit trunk permits SRTP, requires Digest authentication, is scoped to the hotline, and caps each call at 180 seconds. Individual rooms dispatch `pharos-intake` with random room suffixes. LiveKit retains private SIP metadata, including caller numbers and individual-room names; do not publish these in screenshots or application logs.
+
+After filling the consenting teammates' `PHAROS_TEST_CALLER_NUMBERS` in `.env.local`, synchronize that allowlist to the existing owned trunk before starting the worker:
+
+```sh
+Product/voice-agent/.venv/bin/python Product/voice-agent/setup_inbound.py --number +16179939206 --apply --sync-test-callers
+./Product/voice-agent/start_local_worker.sh
+```
+
+`--sync-test-callers` requires a nonempty list and changes only this owned trunk's allowed callers. It does not rotate credentials, replace media settings, touch another trunk, or change a matching dispatch rule. Repeating it with the same list is a no-op. The runtime independently rejects unlisted callers. The start script checks configuration, then registers a local worker with the named SIP dispatch; it runs on this laptop with no hosted-agent deployment and zero idle subprocesses. Leave the terminal and laptop awake for the call. Inference and phone transport still consume their providers' credits when a real call arrives. Stop with Control-C when testing ends. The hotline must also show active in Photon before an inbound call can reach it.
 
 ## Optional protected-call guard
 
@@ -75,6 +95,6 @@ Transient network/408/425/429/5xx failures retry with the same event ID and body
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-The tests use mocked HTTP/voice callbacks and fictional inputs. They check clear versus ambiguous consent, decline, combined yes/facts, startup configuration, ordered turns, stable retry IDs, permanent errors, duplicate warning suppression, partial completion after a delivery failure, explicit withdrawal without persisting the withdrawal itself, skipped queued turns on revocation, and teardown of phone legs after startup failures or an admission-time deadline. A real SIP call and STT accuracy test is still required after credentials and trunks exist.
+The tests use mocked HTTP/voice callbacks and fictional inputs. They check clear versus ambiguous consent, decline, combined yes/facts, startup configuration, ordered turns, stable retry IDs, permanent errors, duplicate warning suppression, partial completion after a delivery failure, explicit withdrawal without persisting the withdrawal itself, skipped queued turns on revocation, and teardown of phone legs after startup failures or an admission-time deadline. SIP setup tests check mutation-free inspection, private credentials, scoped/idempotent creation, explicit allowlist-only synchronization, refusal to clear the list, and preservation of unowned resources. A real SIP call and STT accuracy test is still required.
 
 Official references: [LiveKit voice quickstart](https://docs.livekit.io/agents/start/voice-ai/), [events and errors](https://docs.livekit.io/reference/agents/events/), [outbound calls](https://docs.livekit.io/telephony/making-calls/outbound-calls/), and [recording options](https://docs.livekit.io/reference/agents/session-recording-options/).

@@ -13,7 +13,6 @@ import os
 import re
 import sys
 import uuid
-import sys
 
 # Homebrew Python on macOS may lack a default CA bundle. Use the OS trust store;
 # certificate verification remains enabled for LiveKit/Pharos HTTPS and WSS.
@@ -34,7 +33,8 @@ from pharos_runtime import CallEventStream, ConfigurationError, DeliveryError, S
 load_dotenv(Path(__file__).with_name(".env.local"))
 settings = Settings.from_env(dict(os.environ))
 logger = logging.getLogger("pharos-voice-agent")
-server = AgentServer()
+# This process runs on the demo laptop: avoid eight idle production processes.
+server = AgentServer(num_idle_processes=0)
 
 INTAKE_INSTRUCTIONS = """
 You are Pharos, a brief automated voice intake helper in a disaster scenario.

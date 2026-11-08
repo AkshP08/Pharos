@@ -259,7 +259,7 @@ export default {
     if (method === 'OPTIONS' && pathname.startsWith('/api/')) return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type,Authorization', 'Cache-Control': 'no-store' } })
     // Public presentation video: the hosting asset layer currently ignores Range.
     // Serve explicit single-byte ranges so native seeking and chapter links work.
-    if (pathname === '/pharos-demo.mp4' && (method === 'GET' || method === 'HEAD')) {
+    if (pathname === '/pharos-demo.mp4' && method === 'GET') {
       const asset = await env.ASSETS.fetch(new Request(new URL('/pharos-demo.mp4', request.url), { method: 'GET' }))
       if (!asset.ok) return asset
       const bytes = new Uint8Array(await asset.arrayBuffer())
@@ -270,7 +270,7 @@ export default {
       headers.delete('Content-Encoding')
       const range = request.headers.get('Range')
       const ifRange = request.headers.get('If-Range')
-      if (method === 'HEAD' || !range || (ifRange && ifRange !== headers.get('ETag'))) return new Response(method === 'HEAD' ? null : bytes, { status: 200, headers })
+      if (!range || (ifRange && ifRange !== headers.get('ETag'))) return new Response(bytes, { status: 200, headers })
       const match = /^bytes=(\d*)-(\d*)$/.exec(range)
       let start = 0, end = bytes.length - 1
       if (match && (match[1] || match[2])) {

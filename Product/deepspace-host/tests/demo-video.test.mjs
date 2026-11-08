@@ -11,13 +11,11 @@ function runtime(t) {
     bindings: { DEEPSPACE_APP_ID: 'video-range-fixture', APP_NAME: 'video-range-fixture' },
   })); t.after(() => mf.dispose()); return mf;
 }
-test('public demo video delivers full metadata and HEAD without requiring caller-record access', async t => {
+test('public demo video delivers full metadata without requiring caller-record access', async t => {
   const mf = runtime(t);
   const full = await mf.dispatchFetch('https://fixture.test/pharos-demo.mp4');
   assert.equal(full.status, 200); assert.equal(full.headers.get('Accept-Ranges'), 'bytes');
   assert.equal(full.headers.get('Content-Length'), '256'); assert.deepEqual(new Uint8Array(await full.arrayBuffer()), source);
-  const head = await mf.dispatchFetch('https://fixture.test/pharos-demo.mp4', { method: 'HEAD' });
-  assert.equal(head.status, 200); assert.equal(head.headers.get('Content-Length'), '256'); assert.equal((await head.arrayBuffer()).byteLength, 0);
 });
 test('public demo video honors bounded, open-ended, suffix, and clamped byte ranges', async t => {
   const mf = runtime(t);

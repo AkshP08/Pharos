@@ -11,9 +11,9 @@ Updated November 8, 2026 for the responder-only product. One earlier consenting 
 | Inbound | Saved authenticated TLS Photon SIP destination, scoped LiveKit inbound trunk, individual dispatch to `pharos-intake`, consenting test-caller allowlist. Ring60seconds, call cap180seconds. |
 | Hosted worker | Existing tracked LiveKit deployment in `voice-agent/livekit.toml`. An earlier hosted version passed synthetic speech/case/area/cleanup QA; the new review/audio image must be checked separately. Old local worker stopped. |
 | Backend | Existing DeepSpace app/SQLite with selected secrets. No new storage account is needed for recordings. |
-| Outbound/PWA/SMS | Outbound configuration exists from the earlier experiment; resident relay and SMS remain disabled. Phone B and resident enrollment are outside the current demo. |
+| Outbound/PWA/SMS | Outbound configuration exists from the earlier experiment; resident relay and SMS remain disabled. Phone B now independently calls the same hotline as the suspicious-caller scenario; resident enrollment is outside the current demo. |
 
-The owner already completed the card, inbound, and outbound credential handoffs. Do not request them again or expose ignored credentials. Callers in the current scenario use **Phone A → Pharos → automated intake → Beacon**. The allowlist is a temporary test access/cost boundary, never a fraud feature.
+The owner already completed the card, inbound, and outbound credential handoffs. Do not request them again or expose ignored credentials. Callers in the current scenario use **Phone A (genuine help) or Phone B (suspicious request) → Pharos → automated intake → Beacon**. Both consenting phones are on the inbound test allowlist. The allowlist is a temporary test access/cost boundary, never a fraud feature.
 
 ## Before a coordinated test
 

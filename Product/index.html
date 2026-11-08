@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#112b36" />
-    <meta name="description" content="Pharos helps people seek disaster assistance safely and helps responders organize requests." />
-    <title>Pharos — Flare & Beacon</title>
+    <meta name="description" content="Pharos Beacon organizes phone-reported disaster needs for human responders and reviews suspicious call wording." />
+    <title>Pharos Beacon — Responder Desk</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
@@ -20,127 +20,55 @@
         </a>
         <div class="incident-mini">
           <span class="mini-label">ACTIVE INCIDENT</span>
-          <strong>Trinity River flooding</strong>
-          <span class="incident-status"><i></i> Response active</span>
+          <strong id="sidebarIncidentName">Connecting to incident…</strong>
+          <span class="incident-status" id="sidebarIncidentStatus"><i></i> Awaiting backend</span>
         </div>
         <nav class="primary-nav" aria-label="Main navigation">
           <span class="nav-heading">WORKSPACE</span>
-          <a class="nav-link active" href="#response"><span class="nav-icon">▦</span>Response desk<span class="nav-count">8</span></a>
-          <a class="nav-link" href="#pressure"><span class="nav-icon">⌁</span>Message check<span class="nav-dot"></span></a>
-          <a class="nav-link" href="#activity"><span class="nav-icon">◷</span>Activity log</a>
+          <a class="nav-link active" href="#response"><span class="nav-icon">▦</span>Response desk<span class="nav-count" id="navOpenCount">—</span></a>
+          <a class="nav-link" href="#pressure"><span class="nav-icon">⌁</span>Call warnings<span class="nav-count" id="navAlertCount">—</span></a>
+          <a class="nav-link" href="#callActivity"><span class="nav-icon">◷</span>Call activity</a>
           <span class="nav-heading nav-heading-lower">INCIDENT</span>
-          <a class="nav-link subdued" href="#incident"><span class="nav-icon">⌖</span>Trinity River</a>
-          <a class="nav-link subdued" href="#resources"><span class="nav-icon">◇</span>Resource board</a>
+          <a class="nav-link subdued" href="#response"><span class="nav-icon">⌖</span><span id="navIncidentName">Incident overview</span></a>
+          <a class="nav-link subdued" href="#responderCoverage"><span class="nav-icon">◇</span>Responder coverage</a>
         </nav>
         <div class="sidebar-spacer"></div>
         <div class="team-card">
-          <div class="team-avatars"><span>MR</span><span>JL</span><b>+4</b></div>
-          <div><strong>Response team</strong><small>6 people on shift</small></div>
+          <div class="team-avatars" aria-hidden="true"><span>⌖</span></div>
+          <div><strong>Available coverage</strong><small id="teamAvailability">Connecting…</small></div>
           <span class="online-dot"></span>
         </div>
-        <div class="profile-row"><div class="profile-avatar">JD</div><div><strong>Jordan Davis</strong><small>Volunteer coordinator</small></div><span class="more">···</span></div>
+        <div class="profile-row"><div class="profile-avatar" aria-hidden="true">PB</div><div><strong id="workspaceRole">Beacon workspace</strong><small id="workspaceSession">Checking session</small></div><button type="button" class="signout-button" id="signOutButton" hidden>Sign out</button></div>
       </aside>
 
       <main id="top" class="main-content">
         <header class="topbar">
           <div class="breadcrumb"><span id="breadcrumbSection">Incidents</span><b>/</b><strong id="breadcrumbCurrent">Trinity River flooding</strong></div>
           <div class="topbar-right">
-            <div class="audience-switch" role="group" aria-label="Choose a Pharos experience">
-          <button class="audience-button selected" id="beaconModeButton" aria-pressed="true">Beacon <small>Responders</small></button>
-              <button class="audience-button" id="flareModeButton" aria-pressed="false">Flare <small>Residents</small></button>
-            </div>
             <span class="demo-pill"><i></i> SYNTHETIC DEMO</span>
-            <button class="icon-button" aria-label="Notifications">♧<b></b></button>
-            <button class="help-button" aria-label="Help">?</button>
+            <a class="icon-button alert-shortcut" href="#liveWarnings" aria-label="Open call warnings">♧<b id="alertDot" hidden></b></a>
+            <button class="help-button" id="helpButton" aria-label="Open Pharos Guide">?</button>
           </div>
         </header>
-
-        <section id="flareView" class="audience-view flare-view" hidden aria-labelledby="flareTitle">
-          <div class="flare-hero">
-            <div class="eyebrow"><span class="eyebrow-line"></span>PHAROS FLARE <span class="eyebrow-sep">/</span> RESIDENT SUPPORT</div>
-            <h1 id="flareTitle">Call for help.<br class="mobile-break" /> Keep it simple.</h1>
-            <p class="subhead" id="flareIntro">In a disaster, you shouldn’t have to navigate a website. Pharos is designed around a short phone call; this demo’s phone line is not connected yet.</p>
-          </div>
-          <section class="voice-first-panel" aria-labelledby="voiceFirstTitle">
-            <div class="voice-phone-mark" aria-hidden="true">☎</div>
-            <div class="voice-first-copy">
-              <div class="panel-kicker">PRIMARY HELP PATH · PHONE CALL</div>
-              <h2 id="voiceFirstTitle">Tell Pharos what’s happening.</h2>
-              <p>When the line is live, you can speak naturally or use the keypad. The voice agent will ask only what responders need to start: are you in immediate danger, where are you, and what help is most urgent?</p>
-              <div class="voice-flow-chips"><span>01 · Safety</span><span>02 · Location</span><span>03 · Help needed</span><span>04 · Confirm</span></div>
-              <div class="voice-actions"><button class="button button-primary" id="callDemoButton" type="button">Preview a sample call <span>→</span></button><span class="voice-line-status"><i></i><span id="voiceLineStatus">Hotline not connected yet</span></span></div>
-              <p class="voice-preview-note">Sample flow only · no call is placed and no microphone is used.</p>
-            </div>
-          </section>
-          <section id="callPreview" class="voice-call-preview hidden" aria-label="Sample Pharos call flow" aria-live="polite">
-            <div class="call-preview-title"><span class="live-wave" aria-hidden="true">)))</span><div><strong>Sample phone conversation</strong><small>Fictional example · call audio is not recorded</small></div><button type="button" id="closeCallPreview" aria-label="Close sample call">×</button></div>
-            <div class="call-transcript">
-              <p><strong>Pharos:</strong> “Speech recognition will process what you say so I can understand your choice. If you agree, Pharos will save a text transcript and brief request summary for human responders. Transcript text is deleted after 24 hours. Say yes to continue. You can hang up any time.”</p>
-              <p><strong>Caller:</strong> “Yes.”</p>
-              <p><strong>Pharos:</strong> “First, are you in immediate danger? You can say yes, no, or not sure.”</p>
-              <p><strong>Caller:</strong> “Yes. Water is coming into the house.”</p>
-              <p><strong>Pharos:</strong> “What nearby address or landmark can responders use?”</p>
-              <p><strong>Caller:</strong> “Near the Riverbend footbridge.”</p>
-              <p><strong>Pharos:</strong> “What help do you need most right now? Is there a time-sensitive need I should include?”</p>
-              <p><strong>Caller:</strong> “A safe way out. There are four of us, and one person needs powered oxygen.”</p>
-              <p><strong>Pharos:</strong> “I heard rising water, the Riverbend footbridge, four people, and a powered medical need. Is that right?”</p>
-              <p><strong>Caller:</strong> “Yes, that’s right.”</p>
-              <p><strong>Pharos:</strong> “Okay. I’ll send this as a request for a human responder to review.”</p>
-            </div>
-            <div class="call-preview-note"><strong>How it should triage:</strong> immediate danger and reported time-sensitive needs are visible with the words that support the order. If the caller can’t answer, the field stays unknown for follow-up; it does not lower their place or end the call.</div>
-          </section>
-          <div class="alert-banner">
-            <span class="alert-mark">!</span><div><strong>Sample incident notice · synthetic demo</strong><p>Trinity River water levels are rising in this fictional scenario. This is not a live warning. Check official local emergency channels for current instructions.</p></div>
-            <span class="demo-label">NOT LIVE</span>
-          </div>
-          <div class="flare-grid">
-            <section class="panel intake-panel" aria-labelledby="intakeTitle">
-              <div class="panel-head"><div><div class="panel-kicker">BACKUP PATH · TEXT FORM DEMO</div><h2 id="intakeTitle">Can’t call? Share a short request.</h2></div></div>
-              <p class="panel-intro">The real product is voice-first. This local-only form is a backup for someone who can’t make a call; “not sure” is okay, and missing details must stay visible for follow-up.</p>
-              <form id="helpRequestForm">
-                <label for="safetyStatus">Is anyone in immediate danger?</label>
-                <select id="safetyStatus" name="safetyStatus"><option value="not-sure">Not sure / prefer to explain</option><option value="yes">Yes</option><option value="no">No</option></select>
-                <label for="locationHint">Where are you? <span>Nearby address, cross street, or landmark</span></label>
-                <input id="locationHint" name="locationHint" autocomplete="off" placeholder="Example: near the blue water tower" />
-                <label for="peopleCount">How many people need help?</label>
-                <select id="peopleCount" name="peopleCount"><option value="unknown">Not sure</option><option>1</option><option>2</option><option>3</option><option>4</option><option value="5+">5 or more</option></select>
-                <fieldset><legend>What would help? <span>Choose any that fit</span></legend>
-                  <label class="check-option"><input type="checkbox" name="need" value="Safe evacuation or ride" /> Safe evacuation or ride</label>
-                  <label class="check-option"><input type="checkbox" name="need" value="Medical power or supplies" /> Medical power or supplies</label>
-                  <label class="check-option"><input type="checkbox" name="need" value="Shelter or accessible transport" /> Shelter or accessible transport</label>
-                  <label class="check-option"><input type="checkbox" name="need" value="Water, food, or basic supplies" /> Water, food, or basic supplies</label>
-                  <label class="check-option"><input type="checkbox" name="need" value="Other / not sure" /> Other / not sure</label>
-                </fieldset>
-                <label for="helpDetails">Anything else responders should know? <span>Do not include names, passwords, or payment details</span></label>
-                <textarea id="helpDetails" rows="3" placeholder="Example: one person uses powered medical equipment"></textarea>
-                <button class="button button-primary form-submit" type="submit">Preview my demo request <span>→</span></button>
-              </form>
-              <div id="requestPreview" class="request-preview" aria-live="polite"></div>
-              <div class="safe-note flare-safe-note"><span class="lock-icon">⌑</span> This prototype cannot contact emergency services or send a report. If there is immediate danger, contact your local emergency number.</div>
-            </section>
-            <section class="panel resident-safety-panel" aria-labelledby="residentSafetyTitle">
-              <div class="panel-kicker">MESSAGE SAFETY</div><h2 id="residentSafetyTitle">Check a suspicious message</h2>
-              <p class="panel-intro">Look for pressure tactics such as demands for money, secrecy, or a rushed deadline. A flag is a reason to verify independently, not proof of a scam.</p>
-              <label for="residentMessage">Paste a fictional example</label>
-              <textarea id="residentMessage" rows="5" placeholder="Use a made-up message. Do not paste a real conversation."></textarea>
-              <button class="button button-quiet" id="residentAnalyzeButton" type="button">Check wording <span>→</span></button>
-              <div id="residentAnalysis" class="analysis-output" aria-live="polite"></div>
-              <div class="safe-action resident-safe-action"><span class="safe-action-icon">✓</span><p><strong>Safer next step</strong><br />Don’t use contact details in a suspicious message. Find an official number or website independently.</p></div>
-            </section>
-          </div>
-        </section>
 
         <div id="beaconView" class="audience-view">
         <section id="response" class="page-heading">
           <div>
-            <div class="eyebrow"><span class="eyebrow-line"></span>RESPONSE DESK <span class="eyebrow-sep">/</span> SATURDAY, NOV 7</div>
+            <div class="eyebrow"><span class="eyebrow-line"></span>RESPONSE DESK <span class="eyebrow-sep">/</span> <span id="workspaceDate">RESPONSE WORKSPACE</span></div>
             <h1>Keep the next person<br class="mobile-break" /> from being missed.</h1>
-            <p class="subhead">One shared view for incoming help requests and suspicious disaster messages.</p>
+            <p class="subhead">Residents call. Responders coordinate. Review reported needs, service areas, and suspicious call wording in one place.</p>
           </div>
           <div class="heading-actions">
             <button class="button button-quiet" id="refreshButton"><span class="refresh-icon">↻</span> Refresh queue</button>
             <button class="button button-primary" id="simulateButton"><span class="plus-icon">＋</span> Process sample call</button>
           </div>
+        </section>
+
+        <section class="panel call-activity" aria-labelledby="voiceFirstTitle">
+          <div class="panel-kicker">RESIDENT PHONE HOTLINE → RESPONDER DESK</div>
+          <h2 id="voiceFirstTitle">Help starts with a phone call.</h2>
+          <p class="panel-intro" id="voiceIntakeCopy">The Photon → LiveKit phone route still needs setup. The workbench below tests the backend with fictional transcripts; residents do not need to fill out a website form.</p>
+          <p class="voice-line-status"><i></i><span id="voiceLineStatus">Hotline not connected yet</span></p>
         </section>
 
         <section class="signal-strip" aria-label="Queue summary">
@@ -157,14 +85,15 @@
           <section class="panel queue-panel" aria-labelledby="queueTitle">
             <div class="panel-head queue-head">
               <div><div class="panel-kicker">INCOMING · AREA QUEUE</div><h2 id="queueTitle">Help requests <span class="count-badge" id="queueBadge">—</span></h2></div>
-              <button class="more-button" aria-label="More queue options">···</button>
+              <span class="queue-live-label">Updates every 12s</span>
             </div>
             <div class="queue-tabs" role="tablist" aria-label="Filter requests">
               <button class="queue-tab selected" data-filter="all" role="tab" aria-selected="true">All <span id="allTabCount">—</span></button>
               <button class="queue-tab" data-filter="immediate" role="tab" aria-selected="false">Immediate safety <span id="immediateTabCount">—</span></button>
               <button class="queue-tab" data-filter="followup" role="tab" aria-selected="false">Needs follow-up <span id="followupTabCount">—</span></button>
+              <button class="queue-tab" data-filter="resolved" role="tab" aria-selected="false">Resolved <span id="resolvedTabCount">—</span></button>
             </div>
-            <label class="zone-filter-label" for="zoneFilter">Responders see cases inside their service area.</label>
+            <label class="zone-filter-label" for="zoneFilter">Filter the shared desk by service area.</label>
             <select id="zoneFilter" class="zone-filter"><option value="all">All service areas</option></select>
             <div class="queue-section-label"><span>HIGHEST SUGGESTED URGENCY FIRST</span><span id="queueSortLabel">ALL AREAS</span></div>
             <div id="queueList" class="queue-list"><div class="queue-loading">Connecting to Pharos response data…</div></div>
@@ -176,25 +105,55 @@
           <section class="panel case-panel" aria-labelledby="caseTitle">
             <div class="panel-head case-head">
               <div><div class="panel-kicker">REQUEST <span class="case-id-large" id="caseId">SB-024</span></div><h2 id="caseTitle">Water rising inside home</h2></div>
-              <button class="more-button" aria-label="More request options">···</button>
+              <span class="case-audit-label" id="caseAuditLabel">Human review</span>
             </div>
             <div class="case-location"><span class="pin-icon">⌖</span><span id="caseLocation">Riverbend neighborhood · Zone 3</span><span class="meta-dot">·</span><span id="caseTime">Received 2 minutes ago</span></div>
             <div class="case-summary">
               <div class="reporter-avatar" id="reporterAvatar">AN</div>
             <div class="reporter-copy"><strong id="reporterName">Anonymous caller</strong><span id="caseSource">Self-reported · waiting for backend</span></div>
-              <span class="report-status"><i></i> Open</span>
+              <span class="report-status" id="caseStatus"><i></i> Awaiting case</span>
+            </div>
+            <div class="case-update-summary" id="caseUpdateSummary">
+              <div><strong id="caseUpdateTitle">Initial caller report</strong><span id="caseLatestUpdate">Waiting for a report</span></div>
+              <span class="case-update-count" id="caseLinkedCalls">No linked calls</span>
+            </div>
+            <div class="case-reassessment" id="caseReassessment" role="status" hidden>
+              <strong id="caseReassessmentTitle">New report needs reassessment</strong>
+              <p id="caseReassessmentReason"></p>
+              <button type="button" class="text-button" id="reviewNewFactsButton">Review new facts →</button>
             </div>
             <div class="message-quote"><span class="quote-mark">“</span><p id="caseMessage">Select a request to inspect its transcript-derived facts.</p><small id="caseTranscriptCaption">Resident’s own words · synthetic scenario</small></div>
             <div class="priority-explainer">
-              <div class="priority-title"><span class="priority-symbol">!</span><div><span class="panel-kicker">SUGGESTED QUEUE</span><strong id="priorityLabel">Immediate safety concern</strong></div><span class="human-check">Responder review</span></div>
+              <div class="priority-title"><span class="priority-symbol">!</span><div><span class="panel-kicker" id="priorityOrigin">SUGGESTED QUEUE</span><strong id="priorityLabel">Immediate safety concern</strong></div><span class="human-check">Responder review</span></div>
               <p id="priorityReason">Reported rising water, no safe exit, and a time-sensitive powered medical device. These facts make this request time-critical; the resident’s tone or number of messages did not affect placement.</p>
               <div class="reported-chip-row"><span>Reported: rising water</span><span>Reported: cannot exit</span><span>4 people</span></div>
             </div>
             <div class="case-bottom-actions">
-              <label class="sr-only" for="responderSelect">Responder to claim this case</label><select id="responderSelect" class="responder-select"><option value="">Choose responder</option></select><button class="button button-primary assign-button" id="assignButton">Claim for responder <span>→</span></button>
-              <button class="button button-quiet" id="followupButton">Ask a follow-up</button>
+              <label class="sr-only" id="responderSelectLabel" for="responderSelect">Responder to claim this case</label><select id="responderSelect" class="responder-select"><option value="">Choose responder</option></select><button class="button button-primary assign-button" id="assignButton">Claim for responder <span>→</span></button>
+              <button class="button button-quiet" id="followupButton">Mark for follow-up</button>
+              <button class="button button-quiet" id="resolveButton">Resolve case</button>
             </div>
-            <div class="safe-note"><span class="lock-icon">⌑</span> Self-reported information is not proof or disproof. Human responders decide and can change the suggested order.</div>
+            <p class="case-owner" id="caseOwner">No responder owns this case yet.</p>
+            <p class="assignment-review-note" id="assignmentReviewNote" role="status" hidden></p>
+            <button type="button" class="button button-quiet release-assignment-button" id="releaseAssignmentButton" hidden>Release for reassignment</button>
+            <details class="priority-review" id="priorityReview">
+              <summary>Review queue priority</summary>
+              <form id="priorityOverrideForm">
+                <label for="priorityOverrideSelect">Human-reviewed priority</label>
+                <select id="priorityOverrideSelect" required><option value="immediate">Immediate life-safety</option><option value="time-sensitive">Time-sensitive need</option><option value="urgent">Urgent assistance</option><option value="follow-up">Needs follow-up</option></select>
+                <label for="priorityOverrideReason">Reason for this change</label>
+                <textarea id="priorityOverrideReason" required minlength="8" maxlength="500" rows="2" placeholder="Record the new facts or clarification behind your decision."></textarea>
+                <button class="button button-quiet" id="priorityOverrideButton" type="submit">Save reviewed priority</button>
+                <p id="priorityOverrideResult" class="case-action-result" role="status" aria-live="polite"></p>
+              </form>
+              <p class="priority-audit" id="priorityOverrideAudit" hidden></p>
+            </details>
+            <details class="case-history" id="caseHistory">
+              <summary>Case update history <span id="caseHistoryCount">0</span></summary>
+              <p class="case-linkage-note" id="caseLinkageNote">Linked reports show how the situation changed. A phone-route match does not verify caller identity.</p>
+              <ol class="case-history-list" id="caseHistoryList"><li class="case-history-empty">No case update history is loaded.</li></ol>
+            </details>
+            <div class="safe-note"><span class="lock-icon">⌑</span> Self-reported information needs human review. Priority changes record a reason; claiming a case does not dispatch help.</div>
           </section>
         </div>
 
@@ -213,12 +172,12 @@
           <div class="backend-result" id="transcriptResult" aria-live="polite"></div>
         </section>
 
-        <section class="call-activity panel" aria-labelledby="callActivityTitle">
-          <div class="panel-head"><div><div class="panel-kicker">PHOTON SIP → LIVEKIT → PHAROS</div><h2 id="callActivityTitle">Tracked call sessions <span id="callCount" class="count-badge">—</span></h2><p class="panel-intro">Each session has a call ID, status, consent state, transcript source, and linked case when available. The current entries are synthetic fixtures.</p></div></div>
+        <section id="callActivity" class="call-activity panel" aria-labelledby="callActivityTitle">
+          <div class="panel-head"><div><div class="panel-kicker">PHOTON SIP → LIVEKIT → PHAROS</div><h2 id="callActivityTitle">Tracked call sessions <span id="callCount" class="count-badge">—</span></h2><p class="panel-intro">Each session has a call ID, status, consent state, transcript source, and linked case when available. Fictional fixtures are labelled separately from consented call events.</p></div></div>
           <div id="callList" class="call-list"><div class="queue-loading">Loading call sessions…</div></div>
         </section>
 
-        <section class="responder-coverage panel" aria-labelledby="responderCoverageTitle">
+        <section id="responderCoverage" class="responder-coverage panel" aria-labelledby="responderCoverageTitle">
           <div class="panel-head"><div><div class="panel-kicker">AREA-AWARE RESPONSE</div><h2 id="responderCoverageTitle">Responder coverage profiles</h2><p class="panel-intro">Responders register their organization, service areas, capabilities, availability, and capacity. A coordinator must approve a profile before it can claim cases. In the public demo, use fictional names and organizations only.</p></div></div>
           <form id="responderRegistrationForm" class="responder-form">
             <label>Name<input id="responderNameInput" required maxlength="100" placeholder="Example: Jordan Lee" /></label>
@@ -239,14 +198,29 @@
           <div id="responderProfiles" class="responder-profile-list"></div>
         </section>
 
+        <section id="liveWarnings" class="panel live-warning-panel" aria-labelledby="liveWarningTitle">
+          <div class="panel-head"><div><div class="panel-kicker">DURING-CALL PRESSURE REVIEW</div><h2 id="liveWarningTitle">Call warnings <span class="count-badge" id="liveWarningCount">0</span></h2><p class="panel-intro">Review the wording that triggered a warning and its delivery state. A warning stays separate from disaster-help priority.</p></div></div>
+          <div class="guard-enrollment">
+            <div><strong>Enroll a consenting test phone</strong><p>Create a private link for the guarded-call demo. It expires after 24 hours and covers guarded demo calls only. Open it on the test phone, add it to the Home Screen, and enable notifications before the call.</p></div>
+            <button type="button" class="button button-quiet" id="guardEnrollmentButton">Enroll a test phone</button>
+            <div class="guard-enrollment-result" id="guardEnrollmentResult" hidden>
+              <label for="guardEnrollmentUrl">Private test-phone link · share only with the consenting recipient</label>
+              <input id="guardEnrollmentUrl" type="url" readonly autocomplete="off" spellcheck="false" />
+              <div class="guard-enrollment-actions"><a id="guardEnrollmentOpen" class="text-button" target="_blank" rel="noopener noreferrer">Open private setup</a><button type="button" class="text-button" id="guardEnrollmentCopy">Copy private link</button></div>
+            </div>
+            <p id="guardEnrollmentStatus" class="case-action-result" role="status" aria-live="polite"></p>
+          </div>
+          <div id="liveWarningList" class="live-warning-list"><p class="queue-loading">No call warnings loaded.</p></div>
+        </section>
+
         <section id="pressure" class="panel pressure-panel" aria-labelledby="pressureTitle">
           <div class="pressure-heading">
-            <div class="pressure-title-wrap"><div class="pressure-icon">⌁</div><div><div class="panel-kicker">T-MOBILE SAFE SIGNAL · MESSAGE REVIEW</div><h2 id="pressureTitle">Pressure Trace</h2><p>See exact transcript or message wording that may need verification. Signals do not prove identity or intent.</p></div></div>
+            <div class="pressure-title-wrap"><div class="pressure-icon">⌁</div><div><div class="panel-kicker">T-MOBILE SAFE SIGNAL · PRESSURE TRACE</div><h2 id="pressureTitle">Pressure Trace</h2><p id="pressureSummary">See exact transcript or message wording that may need verification. Signals do not prove identity or intent.</p></div></div>
             <div class="risk-badge"><span class="risk-pulse"></span><span id="riskLevel">NO REVIEW</span><small id="riskSource">synthetic examples</small></div>
           </div>
           <div class="pressure-grid">
             <div class="suspicious-message">
-              <div class="message-source"><span class="sms-icon">▣</span><div><strong>Unknown sender</strong><small>Photon channel · simulated SMS</small></div><span class="unverified-badge">UNVERIFIED</span></div>
+              <div class="message-source"><span class="sms-icon">▣</span><div><strong id="pressureSourceTitle">No review selected</strong><small id="pressureSourceDetail">Waiting for a call or message</small></div><span class="unverified-badge">UNVERIFIED</span></div>
               <p id="suspiciousText">Select a scam review or analyze a synthetic message to see transcript evidence.</p>
               <div class="message-caption"><span>⟲</span> Sender details are unverified; caller ID alone does not prove identity.</div>
             </div>
@@ -284,10 +258,10 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <section class="guide-widget" id="guideWidget" aria-label="Pharos Guide">
       <div class="guide-panel" id="guidePanel" hidden>
-        <div class="guide-head"><span class="guide-avatar" aria-hidden="true"><svg class="pharaoh-mascot" viewBox="0 0 64 64"><g class="mascot-float"><path class="mascot-cloak" d="M12 58c1-10 8-16 20-16s19 6 20 16H12Z"/><path class="mascot-collar" d="m18 49 14 5 14-5-5 12H23l-5-12Z"/><path class="mascot-headdress" d="M11 16 21 6h22l10 10v20l-8 8H19l-8-8V16Z"/><path class="mascot-stripe stripe-one" d="m16 11 7-5h6L16 20v-9Z"/><path class="mascot-stripe stripe-two" d="M29 6h6L15 27v-7L29 6Z"/><path class="mascot-stripe stripe-three" d="M42 8v7L20 37l-4-4L36 8h6Z"/><path class="mascot-face" d="M21 20h22v17c0 8-5 12-11 12s-11-4-11-12V20Z"/><path class="mascot-brow" d="m24 29 6-1m4 0 6 1"/><ellipse class="mascot-eye" cx="28" cy="32" rx="1.5" ry="1.8"/><ellipse class="mascot-eye" cx="38" cy="32" rx="1.5" ry="1.8"/><path class="mascot-smile" d="M28 40q4 3 8 0"/><path class="mascot-uraeus" d="M28 9q4-7 8 0l-2 5h-4l-2-5Z"/><path class="mascot-lantern" d="M47 39h9v12h-9z"/><path class="mascot-lantern-cap" d="m46 39 5-5 5 5h-10Z"/><path class="mascot-light" d="M56 41h7M57 46h6M56 51h7"/></g></svg></span><div><strong>Pharos Guide</strong><small>Voice-first demo helper · no live data</small></div><button id="guideClose" aria-label="Close guide">×</button></div>
-        <div class="guide-messages" id="guideMessages" aria-live="polite"><p class="guide-bubble guide-bot">Hi, I’m the Pharos Guide. I can explain this demo and share general message-safety tips. I can’t send help, verify live warnings, or give emergency instructions.</p></div>
-        <div class="guide-topics"><button type="button" data-question="How do I ask for help?">Ask for help</button><button type="button" data-question="Is this warning real?">Check a warning</button><button type="button" data-question="What does Beacon do?">About Beacon</button></div>
-        <form id="guideForm" class="guide-form"><label class="sr-only" for="guideInput">Ask Pharos Guide</label><input id="guideInput" maxlength="240" autocomplete="off" placeholder="Ask a demo question" /><button aria-label="Send question">↑</button></form>
+        <div class="guide-head"><span class="guide-avatar" aria-hidden="true"><svg class="pharaoh-mascot" viewBox="0 0 64 64"><g class="mascot-float"><path class="mascot-cloak" d="M12 58c1-10 8-16 20-16s19 6 20 16H12Z"/><path class="mascot-collar" d="m18 49 14 5 14-5-5 12H23l-5-12Z"/><path class="mascot-headdress" d="M11 16 21 6h22l10 10v20l-8 8H19l-8-8V16Z"/><path class="mascot-stripe stripe-one" d="m16 11 7-5h6L16 20v-9Z"/><path class="mascot-stripe stripe-two" d="M29 6h6L15 27v-7L29 6Z"/><path class="mascot-stripe stripe-three" d="M42 8v7L20 37l-4-4L36 8h6Z"/><path class="mascot-face" d="M21 20h22v17c0 8-5 12-11 12s-11-4-11-12V20Z"/><path class="mascot-brow" d="m24 29 6-1m4 0 6 1"/><ellipse class="mascot-eye" cx="28" cy="32" rx="1.5" ry="1.8"/><ellipse class="mascot-eye" cx="38" cy="32" rx="1.5" ry="1.8"/><path class="mascot-smile" d="M28 40q4 3 8 0"/><path class="mascot-uraeus" d="M28 9q4-7 8 0l-2 5h-4l-2-5Z"/><path class="mascot-lantern" d="M47 39h9v12h-9z"/><path class="mascot-lantern-cap" d="m46 39 5-5 5 5h-10Z"/><path class="mascot-light" d="M56 41h7M57 46h6M56 51h7"/></g></svg></span><div><strong>Pharos Guide</strong><small>Grounded in this response desk</small></div><button id="guideClose" aria-label="Close guide">×</button></div>
+        <div class="guide-messages" id="guideMessages" aria-live="polite"><p class="guide-bubble guide-bot">Hi, I’m Pharos Guide. Ask about the current queue, selected case, responder coverage, or pressure signals. I use the records loaded in this desk; a human still owns the response.</p></div>
+        <div class="guide-topics"><button type="button" data-question="What needs attention in the queue?">Queue snapshot</button><button type="button" data-question="Explain the latest pressure warning">Pressure warning</button><button type="button" data-question="Explain the selected case priority">Selected case</button></div>
+        <form id="guideForm" class="guide-form"><label class="sr-only" for="guideInput">Ask Pharos Guide</label><input id="guideInput" maxlength="240" autocomplete="off" placeholder="Ask about this response desk" /><button aria-label="Send question">↑</button></form>
       </div>
       <button class="guide-launcher" id="guideLauncher" aria-expanded="false" aria-controls="guidePanel"><span class="guide-launcher-face" aria-hidden="true"><svg class="pharaoh-mascot" viewBox="0 0 64 64"><g class="mascot-float"><path class="mascot-cloak" d="M12 58c1-10 8-16 20-16s19 6 20 16H12Z"/><path class="mascot-collar" d="m18 49 14 5 14-5-5 12H23l-5-12Z"/><path class="mascot-headdress" d="M11 16 21 6h22l10 10v20l-8 8H19l-8-8V16Z"/><path class="mascot-stripe stripe-one" d="m16 11 7-5h6L16 20v-9Z"/><path class="mascot-stripe stripe-two" d="M29 6h6L15 27v-7L29 6Z"/><path class="mascot-stripe stripe-three" d="M42 8v7L20 37l-4-4L36 8h6Z"/><path class="mascot-face" d="M21 20h22v17c0 8-5 12-11 12s-11-4-11-12V20Z"/><path class="mascot-brow" d="m24 29 6-1m4 0 6 1"/><ellipse class="mascot-eye" cx="28" cy="32" rx="1.5" ry="1.8"/><ellipse class="mascot-eye" cx="38" cy="32" rx="1.5" ry="1.8"/><path class="mascot-smile" d="M28 40q4 3 8 0"/><path class="mascot-uraeus" d="M28 9q4-7 8 0l-2 5h-4l-2-5Z"/><path class="mascot-lantern" d="M47 39h9v12h-9z"/><path class="mascot-lantern-cap" d="m46 39 5-5 5 5h-10Z"/><path class="mascot-light" d="M56 41h7M57 46h6M56 51h7"/></g></svg></span><span>Ask Pharos Guide</span></button>
     </section>

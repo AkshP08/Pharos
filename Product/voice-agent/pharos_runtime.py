@@ -8,7 +8,7 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -194,8 +194,43 @@ class VoiceEventClient:
             await self.sleep(min(0.25 * (2 ** attempt), 2.0))
         raise DeliveryError("Voice delivery exhausted its retry budget")
 
+    async def progress(self, call_id: str) -> dict[str, Any]:
+        """Read only authenticated server progress; never generate an estimate."""
+        for attempt in range(self.attempts):
+            try:
+                response = await self.client.get(
+                    f"{self.api_url}/api/voice/calls/{quote(call_id, safe='')}/progress",
+                    headers={"Authorization": f"Bearer {self.token}"},
+                )
+            except httpx.TransportError:
+                retryable, status = True, "network"
+            else:
+                if 200 <= response.status_code < 300:
+                    try:
+                        result = response.json()
+                    except ValueError:
+                        raise DeliveryError("Responder progress returned invalid data") from None
+                    states = {"pending", "en-route", "arrived", "delayed", "unable", "review-needed", "resolved"}
+                    if (not isinstance(result, dict) or result.get("accepted") is not True
+                            or not isinstance(result.get("state"), str) or result["state"] not in states
+                            or not isinstance(result.get("revision"), str) or not 1 <= len(result["revision"]) <= 256
+                            or type(result.get("announce")) is not bool
+                            or not isinstance(result.get("message"), str) or len(result["message"]) > 1000
+                            or (result["announce"] and not result["message"].strip())):
+                        raise DeliveryError("Responder progress returned invalid data")
+                    # Do not forward any unrequested identity/metadata fields.
+                    return {key: result[key] for key in ("accepted", "revision", "state", "message", "announce")}
+                status = str(response.status_code)
+                retryable = response.status_code in {408, 425, 429} or response.status_code >= 500
+            if not retryable or attempt + 1 == self.attempts:
+                raise DeliveryError(f"Responder progress unavailable (status {status})") from None
+            logger.warning("Responder progress will retry; attempt=%d status=%s", attempt + 1, status)
+            await self.sleep(min(0.25 * (2 ** attempt), 2.0))
+        raise DeliveryError("Responder progress exhausted its retry budget")
+
 
 WarningCallback = Callable[[dict[str, Any]], Awaitable[None]]
+ProgressCallback = Callable[[dict[str, Any]], Awaitable[bool]]
 ReviewerFactory = Callable[[], Any]
 
 
@@ -210,14 +245,17 @@ class CallEventStream:
     def __init__(self, client: VoiceEventClient, call_id: str, *, purpose: str,
                  on_warning: WarningCallback | None = None, transport: str = "sip",
                  caller_number: str | None = None, semantic_review: bool = False,
-                 reviewer_factory: ReviewerFactory | None = None):
+                 reviewer_factory: ReviewerFactory | None = None,
+                 on_progress: ProgressCallback | None = None,
+                 progress_interval: float = 3.0,
+                 progress_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep):
         self.client = client
         self.call_id = call_id
         self.purpose = purpose
         self.transport = transport
-        # Only authenticated SIP intake metadata may be sent for server-side
-        # HMAC linkage. Never accept a browser attribute or a guard recipient.
-        self._caller_number = (caller_number.strip() if purpose == "intake" and transport == "sip"
+        # Provider-observed SIP caller IDs support purpose-separated, encrypted
+        # contact/risk history. They never enter the content-review model.
+        self._caller_number = (caller_number.strip() if purpose in {"intake", "guard"} and transport == "sip"
                                and isinstance(caller_number, str)
                                and re.fullmatch(r"\+[1-9]\d{6,14}", caller_number.strip()) else None)
         self._started = False
@@ -243,6 +281,13 @@ class CallEventStream:
         self._semantic_pending: tuple[int, str] | None = None
         self._latest_caller_sequence: int | None = None
         self._semantic_requests = 0
+        self.on_progress = on_progress if purpose == "intake" else None
+        self._progress_interval = progress_interval
+        self._progress_sleep = progress_sleep
+        self._progress_task: asyncio.Task[None] | None = None
+        self._progress_stopped = False
+        self._progress_case_id: str | None = None
+        self._progress_seen_revisions: set[str] = set()
 
     async def start(self) -> None:
         if self._started:
@@ -251,7 +296,7 @@ class CallEventStream:
         if self.semantic_review:
             payload["analysisMode"] = "semantic"
         if self._caller_number is not None:
-            payload["callerNumber"] = self._caller_number
+            payload["guardCallerNumber" if self.purpose == "guard" else "callerNumber"] = self._caller_number
         result = await self.client.post("call.started", self.call_id, **payload)
         self.warning_url = result.get("warningUrl")
         self._started = True
@@ -359,6 +404,65 @@ class CallEventStream:
         if self._semantic_close_task is not None:
             await asyncio.shield(self._semantic_close_task)
 
+    def _progress_active(self) -> bool:
+        return (self.purpose == "intake" and self.on_progress is not None and self.consented
+                and not self.closed and not self.revoked and not self._progress_stopped
+                and self._progress_case_id is not None)
+
+    def _acknowledge_progress_case(self, result: dict[str, Any]) -> None:
+        case_id = result.get("caseId")
+        if (self.purpose != "intake" or self.on_progress is None or not self.consented
+                or self.closed or self.revoked or self._progress_stopped
+                or not isinstance(case_id, str) or not case_id):
+            return
+        self._progress_case_id = case_id
+        if self._progress_task is None:
+            self._progress_task = asyncio.create_task(self._poll_progress())
+
+    async def _poll_progress(self) -> None:
+        while self._progress_active():
+            try:
+                update = await self.client.progress(self.call_id)
+                if not self._progress_active():
+                    return
+                revision = update["revision"]
+                if update["announce"] and revision not in self._progress_seen_revisions:
+                    # A false callback means the caller/bot is busy. Do not queue
+                    # this wording: next poll obtains the server's fresh revision.
+                    announced = await self.on_progress(update)
+                    if announced and self._progress_active():
+                        self._progress_seen_revisions.add(revision)
+                update = None
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # An optional status read never changes transcript delivery,
+                # invents an ETA, or repeats private server/exception text.
+                logger.warning("Responder progress unavailable; no estimate was announced")
+            if self._progress_active():
+                await self._progress_sleep(self._progress_interval)
+
+    def _stop_progress(self) -> None:
+        self._progress_stopped = True
+        self._progress_case_id = None
+        self._progress_seen_revisions.clear()
+        if self._progress_task is not None:
+            self._progress_task.cancel()
+
+    async def _close_progress(self) -> None:
+        task = self._progress_task
+        if task is not None:
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._progress_task = None
+
+    def stop_background(self) -> None:
+        """Stop optional work immediately while permitting final STT flushing."""
+        self._stop_progress()
+        self._stop_semantic()
+
     def enqueue(self, event: str, **payload: Any) -> asyncio.Task[dict[str, Any]]:
         previous = self._tail
 
@@ -374,6 +478,8 @@ class CallEventStream:
                 raise
             if event == "turn" and payload.get("role") == "caller":
                 self._acknowledge_semantic_caller(payload["sequence"], payload["text"])
+            if event == "turn":
+                self._acknowledge_progress_case(result)
             await self._notify_warning(result)
             return result
 
@@ -412,7 +518,7 @@ class CallEventStream:
         self.closed = True
         self.warning_url = None
         self._caller_number = None
-        self._stop_semantic()
+        self.stop_background()
         if self._revocation_task is None:
             previous = self._tail
 
@@ -427,6 +533,7 @@ class CallEventStream:
                     return await self.client.post("consent.revoked", self.call_id)
                 finally:
                     await self._close_semantic()
+                    await self._close_progress()
 
             self._revocation_task = asyncio.create_task(revoke_after_pending())
         return self._revocation_task
@@ -439,12 +546,13 @@ class CallEventStream:
         if self._finish_task is None:
             self.closed = True
             self._caller_number = None
-            self._stop_semantic()
+            self.stop_background()
             self._finish_task = asyncio.create_task(self._finish())
         await asyncio.shield(self._finish_task)
 
     async def _finish(self) -> None:
         await self._close_semantic()
+        await self._close_progress()
         if self.revoked:
             try:
                 await self.revoke()

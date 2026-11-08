@@ -98,7 +98,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all("callerNumber" not in body for body in bodies[1:]))
         self.assertEqual(sum(body["event"] == "call.started" for body in bodies), 1)
 
-    async def test_guard_browser_and_invalid_metadata_never_forward_a_number(self):
+    async def test_guard_uses_separate_risk_metadata_and_browser_never_forwards_a_number(self):
         for purpose, transport, number in (("guard", "sip", "+12025550102"),
                                            ("intake", "webrtc", "+12025550102"),
                                            ("intake", "sip", "not-an-e164-number")):
@@ -108,6 +108,10 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
                                          transport=transport, caller_number=number)
                 await stream.start()
                 self.assertNotIn("callerNumber", post.await_args.kwargs)
+                if purpose == "guard" and transport == "sip":
+                    self.assertEqual(post.await_args.kwargs.get("guardCallerNumber"), number)
+                else:
+                    self.assertNotIn("guardCallerNumber", post.await_args.kwargs)
                 self.assertIsNone(stream._caller_number)
 
     async def test_retry_reuses_event_id_and_preserves_body(self):
@@ -401,6 +405,196 @@ class SemanticSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 await stream.finish()
                 factory.assert_not_called()
                 reviewer.aclose.assert_not_awaited()
+
+
+class ResponderProgressTests(unittest.IsolatedAsyncioTestCase):
+    class PollClock:
+        def __init__(self):
+            self.waiting = asyncio.Queue()
+            self.intervals = []
+
+        async def sleep(self, interval):
+            self.intervals.append(interval)
+            future = asyncio.get_running_loop().create_future()
+            self.waiting.put_nowait(future)
+            await future
+
+        async def paused(self):
+            return await asyncio.wait_for(self.waiting.get(), timeout=1)
+
+    def update(self, revision='r1', *, announce=True, state='en-route', message='A responder confirmed an arrival estimate of about 12 minutes.'):
+        return {'accepted': True, 'revision': revision, 'announce': announce, 'state': state, 'message': message}
+
+    async def test_progress_get_uses_ingest_auth_encodes_path_and_retries_without_body(self):
+        requests = []
+        async def handler(request):
+            requests.append(request)
+            return httpx.Response(503 if len(requests) == 1 else 200,
+                                  json={**self.update(), 'unrequestedIdentity': 'never forward'})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = VoiceEventClient('https://pharos.example', 'fixture-ingest', client=http, sleep=AsyncMock())
+            result = await client.progress('fictional/call?')
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(all(request.method == 'GET' for request in requests))
+        self.assertTrue(all(request.headers['Authorization'] == 'Bearer fixture-ingest' for request in requests))
+        self.assertTrue(all(request.content == b'' for request in requests))
+        self.assertIn('fictional%2Fcall%3F/progress', requests[0].url.raw_path.decode())
+        self.assertEqual(result, self.update())
+
+    async def test_progress_failure_is_bounded_and_never_echoes_server_text(self):
+        for status, data in ((403, {'message': 'private body'}), (200, {**self.update(), 'state': []})):
+            requests = []
+            async def handler(request):
+                requests.append(request)
+                return httpx.Response(status, json=data)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+                client = VoiceEventClient('https://pharos.example', 'fixture-ingest', client=http, sleep=AsyncMock())
+                with self.assertRaises(DeliveryError) as raised:
+                    await client.progress('fixture')
+            self.assertEqual(len(requests), 1)
+            self.assertNotIn('private body', str(raised.exception))
+
+    async def test_polling_needs_consent_and_saved_case_turn_ack(self):
+        clock = self.PollClock()
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def post(event, call_id, **payload):
+            if event == 'turn' and payload['sequence'] == 1:
+                entered.set()
+                await release.wait()
+                return {'accepted': True, 'caseId': 'fictional-case'}
+            return {'accepted': True}
+        progress = AsyncMock(return_value=self.update(announce=False, state='pending', message='Request received for review.'))
+        callback = AsyncMock(return_value=True)
+        stream = CallEventStream(SimpleNamespace(post=post, progress=progress), 'fixture', purpose='intake',
+                                 on_progress=callback, progress_sleep=clock.sleep)
+        await stream.start()
+        self.assertIsNone(stream.turn('caller', 'Do not collect before consent'))
+        progress.assert_not_awaited()
+        await stream.consent(True)
+        await stream.turn('caller', 'First fictional incomplete fact')
+        progress.assert_not_awaited()
+        pending = stream.turn('caller', 'Fictional location and need')
+        await entered.wait()
+        progress.assert_not_awaited()
+        release.set()
+        await pending
+        await clock.paused()
+        progress.assert_awaited_once_with('fixture')
+        callback.assert_not_awaited()  # Receipt does not become an ETA announcement.
+        self.assertEqual(clock.intervals, [3.0])
+        await stream.finish()
+
+    async def test_deferred_update_rechecks_fresh_revision_and_announces_each_revision_once(self):
+        clock = self.PollClock()
+        busy = True
+        spoken = []
+        async def callback(update):
+            if busy:
+                return False
+            spoken.append(update['message'])
+            return True
+        first = self.update('r1', message='Earlier confirmed estimate.')
+        latest = self.update('r2', state='delayed', message='The responder reported a delay. No updated estimate is confirmed.')
+        arrived = self.update('r3', state='arrived', message='The responder marked arrival.')
+        progress = AsyncMock(side_effect=[first, latest, latest, arrived])
+        client = SimpleNamespace(post=AsyncMock(return_value={'accepted': True, 'caseId': 'fixture-case'}), progress=progress)
+        stream = CallEventStream(client, 'fixture', purpose='intake', on_progress=callback, progress_sleep=clock.sleep)
+        await stream.start()
+        await stream.consent(True)
+        await stream.turn('caller', 'Consented fictional request')
+        pause = await clock.paused()
+        self.assertEqual(spoken, [])
+        busy = False
+        pause.set_result(None)
+        pause = await clock.paused()
+        self.assertEqual(spoken, [latest['message']])
+        pause.set_result(None)
+        pause = await clock.paused()
+        self.assertEqual(spoken, [latest['message']])
+        pause.set_result(None)
+        await clock.paused()
+        self.assertEqual(spoken, [latest['message'], arrived['message']])
+        self.assertNotIn(first['message'], spoken)
+        await stream.finish()
+        self.assertEqual(stream._progress_seen_revisions, set())
+        self.assertIsNone(stream._progress_case_id)
+
+    async def test_withdrawal_cancels_get_and_ignores_cancellation_resistant_late_response(self):
+        entered, cancelled = asyncio.Event(), asyncio.Event()
+        async def progress(call_id):
+            entered.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                cancelled.set()
+                return self.update()
+        callback = AsyncMock(return_value=True)
+        client = SimpleNamespace(post=AsyncMock(return_value={'accepted': True, 'caseId': 'fixture-case'}),
+                                 progress=AsyncMock(side_effect=progress))
+        stream = CallEventStream(client, 'fixture', purpose='intake', on_progress=callback)
+        await stream.start()
+        await stream.consent(True)
+        await stream.turn('caller', 'Previously consented fictional request')
+        await entered.wait()
+        revocation = stream.begin_revocation()
+        self.assertIsNone(stream._progress_case_id)
+        self.assertEqual(stream._progress_seen_revisions, set())
+        await revocation
+        self.assertTrue(cancelled.is_set())
+        callback.assert_not_awaited()
+        self.assertIsNone(stream.turn('caller', 'Never send after withdrawal'))
+        await stream.finish()
+        client.progress.assert_awaited_once()
+
+    async def test_guard_never_polls_even_with_callback_and_case_looking_ack(self):
+        callback = AsyncMock(return_value=True)
+        client = SimpleNamespace(post=AsyncMock(return_value={'accepted': True, 'caseId': 'not-a-guard-case'}), progress=AsyncMock())
+        stream = CallEventStream(client, 'fixture', purpose='guard', on_progress=callback)
+        await stream.start()
+        await stream.consent(True)
+        await stream.turn('caller', 'Fictional guard wording')
+        await stream.finish()
+        client.progress.assert_not_awaited()
+        callback.assert_not_awaited()
+
+    async def test_voice_callback_defers_busy_pipeline_and_speaks_only_server_message(self):
+        stream = CallEventStream(SimpleNamespace(), 'fixture', purpose='intake')
+        stream.consented = True
+        session = SimpleNamespace(user_state='speaking', agent_state='listening', say=AsyncMock())
+        update = self.update()
+        self.assertFalse(await agent.announce_responder_progress(session, stream, update))
+        session.user_state = 'listening'
+        for state in ('thinking', 'speaking', 'initializing'):
+            session.agent_state = state
+            self.assertFalse(await agent.announce_responder_progress(session, stream, update))
+        session.say.assert_not_awaited()
+        session.agent_state = 'listening'
+        self.assertTrue(await agent.announce_responder_progress(session, stream, update))
+        session.say.assert_awaited_once_with(update['message'], allow_interruptions=True)
+        stream.revoked = True
+        self.assertFalse(await agent.announce_responder_progress(session, stream, update))
+        self.assertEqual(session.say.await_count, 1)
+
+    async def test_cancelled_progress_speech_is_interrupted(self):
+        class Speech:
+            def __init__(self):
+                self.entered = asyncio.Event()
+                self.interrupt = MagicMock()
+            def __await__(self):
+                async def wait():
+                    self.entered.set()
+                    await asyncio.Future()
+                return wait().__await__()
+        speech = Speech()
+        stream = CallEventStream(SimpleNamespace(), 'fixture', purpose='intake')
+        stream.consented = True
+        session = SimpleNamespace(user_state='listening', agent_state='listening', say=MagicMock(return_value=speech))
+        task = asyncio.create_task(agent.announce_responder_progress(session, stream, self.update()))
+        await speech.entered.wait()
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        speech.interrupt.assert_called_once()
 
 
 class AgentConsentTests(unittest.IsolatedAsyncioTestCase):

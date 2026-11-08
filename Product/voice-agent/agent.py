@@ -75,6 +75,11 @@ Tone, accent, emotion, and persistence never determine priority or scam risk.
 The Pharos backend suggests urgency from explicit facts; human responders own action.
 Do not say the case was successfully saved or assistance dispatched: delivery is
 confirmed separately by the server. Say the request is for human review.
+Never invent an arrival estimate, responder availability, or claim help is on the
+way. Only a separate authenticated server announcement may confirm response
+progress or an ETA. If asked before one exists, say you do not yet have a
+confirmed arrival estimate. Once essential facts are obtained, acknowledge the
+request for human review once, briefly; do not keep repeating receipt language.
 """.strip()
 
 INTAKE_DISCLOSURE = (
@@ -107,6 +112,23 @@ def safe_failure_diagnostic(error: BaseException) -> str:
 def yes_or_no(value: str) -> bool | None:
     """Compatibility helper for the original prototype."""
     return parse_consent(value).decision
+
+
+async def announce_responder_progress(session: Any, stream: CallEventStream, update: dict[str, Any]) -> bool:
+    """Speak server-authored facts only when the caller and voice pipeline pause."""
+    if (not stream.consented or stream.closed or stream.revoked or not update.get("announce")
+            or session is None or session.user_state == "speaking" or session.agent_state != "listening"):
+        return False
+    speech = session.say(update["message"], allow_interruptions=True)
+    try:
+        await speech
+    except asyncio.CancelledError:
+        # Await cancellation alone does not necessarily cancel SDK audio output.
+        # A revoked/closed call must also stop an already queued announcement.
+        if hasattr(speech, "interrupt"):
+            speech.interrupt()
+        raise
+    return True
 
 
 class PharosAgent(Agent):
@@ -202,10 +224,14 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
 
     def request_end(reason: str) -> None:
         ended.set()
+        if stream is not None:
+            stream.stop_background()
         ctx.shutdown(reason)
 
     async def perform_cleanup() -> None:
         ended.set()
+        if stream is not None:
+            stream.stop_background()
         # Release phone legs before potentially slow transcript/backend flushing.
         # Individual dispatch rooms contain this call only. If startup failed
         # before selecting its participant, still release any admitted SIP leg.
@@ -275,10 +301,14 @@ async def run_session(ctx: agents.JobContext, config: Settings) -> None:
                     )
                 logger.info("New wording warning received; level=%s", warning.get("level", "review"))
 
+            async def on_progress(update: dict[str, Any]) -> bool:
+                return await announce_responder_progress(session, stream, update)
+
             stream = CallEventStream(client, f"ph-call-{uuid.uuid4()}", purpose=config.mode,
                                      on_warning=on_warning, transport="sip" if is_phone else "webrtc",
-                                     caller_number=caller_number if is_phone and not guard else None,
-                                     semantic_review=guard and config.semantic_guard_review)
+                                     caller_number=caller_number if is_phone else None,
+                                     semantic_review=guard and config.semantic_guard_review,
+                                     on_progress=on_progress if not guard else None)
             await stream.start()
 
             async def start_relay() -> None:

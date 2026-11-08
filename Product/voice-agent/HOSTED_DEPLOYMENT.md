@@ -16,10 +16,24 @@ The project's own displayed quota and remaining credits should also be checked
 immediately before deployment.
 
 Build agents can sleep when idle. A cold start adds about **10–20 seconds** before
-the agent joins. The current 15-second inbound trunk ringing timeout should be
-deliberately raised before using the hosted route; otherwise a cold first call
-can fail. This preparation does not change the trunk. Free Build does not include
-always-warm hosting. See [cold starts](https://docs.livekit.io/deploy/agents/managing-deployments/#cold-start).
+the agent joins. The existing owned inbound trunk has been prepared and re-read
+with a **60-second ringing timeout** and its existing **180-second call cap**.
+Its caller allowlist, media configuration, credentials, and dispatch rule were
+preserved. Free Build does not include always-warm hosting. See
+[cold starts](https://docs.livekit.io/deploy/agents/managing-deployments/#cold-start).
+
+For a future setup, this explicit command changes only the ringing timeout on
+the exact locally owned existing trunk; it refuses new resources, changed
+credentials, broader number scopes, or simultaneous allowlist changes:
+
+```sh
+Product/voice-agent/.venv/bin/python Product/voice-agent/setup_inbound.py --number +16179939206 --apply --prepare-hosted
+```
+
+The SDK cannot patch `ringing_timeout` alone, so the script copies the full
+currently listed trunk, restores the same saved Digest password if the API
+redacted it, and replaces only the timeout. Repeating it at 60 seconds is a
+no-op. New trunks created by this setup also default to 60 seconds.
 
 ## Review and prepare
 
@@ -30,8 +44,8 @@ inputs, excluding every local env file, test, virtualenv, SIP credential, and
 development log. Direct dependencies are pinned; their transitive dependencies
 are resolved by pip during the hosted build. No local Docker daemon is required
 because [LiveKit builds the image](https://docs.livekit.io/deploy/agents/builds/).
-A Docker daemon and `lk` were not installed when this workflow was prepared;
-the Linux image has not been built locally.
+The official `lk` CLI v2.19.0 is installed. A Docker daemon is absent, so the
+Linux image has not been built locally.
 
 From the repository root, prepare the private intake-only runtime settings:
 
@@ -51,23 +65,36 @@ checks to pass; it does not turn those flags on automatically.
 
 ## Operator deployment after approval
 
-Install the official CLI if needed, then link/select the existing project:
+The installed CLI can authenticate using the existing project's URL/API keys
+from the ignored local env file; an additional OAuth login is unnecessary. A
+read-only agent listing using those credentials has confirmed the Build slot is
+empty. Never put keys in command arguments or print the loaded environment.
+From the repository root, this read-only preflight keeps credentials in process
+environment only:
 
 ```sh
-brew install livekit-cli
-lk cloud auth
-lk project list
-lk project set-default "<existing project name shown by project list>"
+Product/voice-agent/.venv/bin/python - <<'PY'
+import subprocess
+from dotenv import load_dotenv
+load_dotenv('Product/voice-agent/.env.local')
+subprocess.run(['lk', 'agent', 'list'], cwd='Product/voice-agent', check=True)
+PY
 ```
 
-Do not paste keys into command arguments or chat. Confirm the selected project
-is the existing `pharos-dkmaw3b9` project. In a new terminal, from the repository:
+Confirm the selected project is the existing `pharos-dkmaw3b9` project and the
+Build plan is still active. After explicit deployment approval, use the same
+environment-only authentication to create the single production agent:
 
 ```sh
-cd Product/voice-agent
-lk agent list
-lk agent create --region us-east --secrets-file .env.hosted.local .
-lk agent status
+Product/voice-agent/.venv/bin/python - <<'PY'
+import subprocess
+from dotenv import load_dotenv
+load_dotenv('Product/voice-agent/.env.local')
+subprocess.run(['lk', 'agent', 'create', '--region', 'us-east',
+                '--secrets-file', '.env.hosted.local', '.'],
+               cwd='Product/voice-agent', check=True)
+subprocess.run(['lk', 'agent', 'status'], cwd='Product/voice-agent', check=True)
+PY
 ```
 
 Run `create` **only once**, when the Build deployment slot is empty. It deploys

@@ -56,7 +56,7 @@ def inbound_request(number: str, username: str, password: str, allowed: list[str
         auth_username=username,
         auth_password=password,
         media_encryption=api.SIP_MEDIA_ENCRYPT_ALLOW,
-        ringing_timeout=Duration(seconds=15),
+        ringing_timeout=Duration(seconds=60),
         max_call_duration=Duration(seconds=180),
         krisp_enabled=False,
     ))
@@ -79,9 +79,45 @@ def dispatch_request(trunk_id: str, agent_name: str) -> api.CreateSIPDispatchRul
     ))
 
 
+async def prepare_owned_hosted_trunk(client: Any, trunk: api.SIPInboundTrunkInfo, number: str,
+                                    saved: dict[str, str]) -> dict[str, Any]:
+    username = saved.get("PHAROS_LIVEKIT_SIP_USERNAME")
+    password = saved.get("PHAROS_LIVEKIT_SIP_PASSWORD")
+    if (not username or not password
+            or saved.get("PHAROS_LIVEKIT_INBOUND_TRUNK_ID") != trunk.sip_trunk_id
+            or list(trunk.numbers) != [number] or trunk.auth_username != username):
+        raise SetupError("Hosted preparation requires the exact locally owned inbound trunk and saved credentials")
+    listed_password = trunk.auth_password
+    redacted = (not listed_password or bool(re.fullmatch(r"\*+", listed_password))
+                or listed_password.lower() in {"redacted", "[redacted]", "<redacted>"})
+    if not redacted and listed_password != password:
+        raise SetupError("Existing inbound credentials differ; no replacement or credential rotation was attempted")
+    if trunk.max_call_duration.seconds != 180 or trunk.max_call_duration.nanos != 0:
+        raise SetupError("Existing call duration differs from the expected test cap; it was preserved")
+
+    changed = trunk.ringing_timeout.seconds != 60 or trunk.ringing_timeout.nanos != 0
+    if changed:
+        replacement = api.SIPInboundTrunkInfo()
+        replacement.CopyFrom(trunk)
+        # The field-update SDK omits ringing_timeout. Clone the complete current
+        # trunk instead, restoring its SAME private password if listing hid it.
+        replacement.auth_password = password if redacted else listed_password
+        replacement.ringing_timeout.CopyFrom(Duration(seconds=60))
+        trunk = await client.sip.update_inbound_trunk(trunk.sip_trunk_id, replacement)
+    return {
+        "inboundTrunkId": trunk.sip_trunk_id,
+        "updatedRingingTimeout": changed,
+        "ringingTimeoutSeconds": trunk.ringing_timeout.seconds,
+        "maxCallDurationSeconds": trunk.max_call_duration.seconds,
+        "callerAllowlistConfigured": bool(trunk.allowed_numbers),
+        "createdInboundTrunk": False,
+        "createdDispatchRule": False,
+    }
+
+
 async def configure(client: Any, number: str, *, apply: bool = False, private_file: Path = PRIVATE_FILE,
                     agent_name: str = "pharos-intake", allowed_callers: list[str] | None = None,
-                    sync_test_callers: bool = False) -> dict[str, Any]:
+                    sync_test_callers: bool = False, prepare_hosted: bool = False) -> dict[str, Any]:
     if not re.fullmatch(r"\+[1-9]\d{6,14}", number):
         raise SetupError("An existing E.164 Photon number is required")
     allowed = list(dict.fromkeys(allowed_callers or []))
@@ -89,6 +125,8 @@ async def configure(client: Any, number: str, *, apply: bool = False, private_fi
         raise SetupError("The test caller allowlist must contain E.164 numbers")
     if sync_test_callers and (not apply or not allowed):
         raise SetupError("Synchronizing test callers requires --apply and a nonempty local test caller allowlist")
+    if prepare_hosted and (not apply or sync_test_callers):
+        raise SetupError("Hosted preparation requires --apply and cannot be combined with allowlist synchronization")
     trunks = (await client.sip.list_inbound_trunk(api.ListSIPInboundTrunkRequest())).items
     rules = (await client.sip.list_dispatch_rule(api.ListSIPDispatchRuleRequest())).items
     candidates = [trunk for trunk in trunks if number in trunk.numbers]
@@ -102,6 +140,11 @@ async def configure(client: Any, number: str, *, apply: bool = False, private_fi
         return result
 
     saved = {key: value for key, value in dotenv_values(private_file).items() if value} if private_file.exists() else {}
+    if prepare_hosted:
+        if not candidates:
+            raise SetupError("Hosted preparation only updates an existing owned inbound trunk; none was created")
+        result.update(await prepare_owned_hosted_trunk(client, candidates[0], number, saved))
+        return result
     username = saved.get("PHAROS_LIVEKIT_SIP_USERNAME") or f"pharos_{secrets.token_hex(8)}"
     password = saved.get("PHAROS_LIVEKIT_SIP_PASSWORD") or secrets.token_urlsafe(36)
     saved.update({
@@ -163,6 +206,7 @@ async def main_async() -> None:
     parser.add_argument("--number", required=True, help="Already provisioned Photon hotline number")
     parser.add_argument("--apply", action="store_true", help="Create only missing scoped SIP configuration; does not place a call")
     parser.add_argument("--sync-test-callers", action="store_true", help="With --apply, update only this owned trunk's nonempty test caller allowlist")
+    parser.add_argument("--prepare-hosted", action="store_true", help="With --apply, change only this existing owned trunk's ringing timeout to 60 seconds")
     arguments = parser.parse_args()
     load_dotenv(ROOT / ".env.local")
     for name in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):
@@ -172,7 +216,7 @@ async def main_async() -> None:
     async with api.LiveKitAPI() as client:
         result = await configure(client, arguments.number, apply=arguments.apply,
                                  agent_name=os.getenv("PHAROS_AGENT_NAME", "pharos-intake"), allowed_callers=allowed,
-                                 sync_test_callers=arguments.sync_test_callers)
+                                 sync_test_callers=arguments.sync_test_callers, prepare_hosted=arguments.prepare_hosted)
     print(json.dumps(result, indent=2))
 
 

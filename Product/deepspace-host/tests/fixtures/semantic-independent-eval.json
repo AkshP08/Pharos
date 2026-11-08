@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "stage": "completed",
+  "startedAt": "2026-11-08T13:06:37.649318+00:00",
+  "savedAt": "2026-11-08T13:06:40.303712+00:00",
+  "evaluation": "Six new independent QA examples, labels fixed before any inference",
+  "scope": "Transcript words and psychological manipulation only; no phone identity or caller reputation features.",
+  "limitations": "Small synthetic challenge set authored by a separate QA agent, not a population accuracy estimate. The agent reviewed the earlier 28-case holdout and eight-case smoke summary to avoid reusing those scenarios. No implementation content or prompt wording was displayed while authoring these cases.",
+  "model": "google/gemma-4-31b-it",
+  "moduleSha256": "72ba0435a71599b6e2e40a997f7716ebdb54cc88ed0afa7069074a8c2ef05be4",
+  "promptSha256": "8964d35428ac6fe7505b3df94ff260a9de7a9f0a9760df8fe5c323f62b969ceb",
+  "frozenInputSha256": "eb83df0bec01fb1fcf6e3d86757bfd688fd7aea2800daf441f5f601329fee0f8",
+  "labelsFixedBeforeInference": true,
+  "maximumRequests": 6,
+  "attemptedCases": 6,
+  "plannedCases": 6,
+  "validResultCount": 6,
+  "unavailableOrWithheldCount": 0,
+  "validatedDecisionMatrix": {
+    "truePositive": 3,
+    "falsePositive": 0,
+    "trueNegative": 3,
+    "falseNegative": 0
+  },
+  "allCaseAccounting": {
+    "expectedWarning": {
+      "validatedWarning": 3,
+      "validatedNoWarning": 0,
+      "unavailableOrWithheld": 0
+    },
+    "expectedNonWarning": {
+      "validatedNoWarning": 3,
+      "validatedWarning": 0,
+      "unavailableOrWithheld": 0
+    }
+  },
+  "denominatorIncludingUnavailable": {
+    "correct": 6,
+    "failed": 0,
+    "attempted": 6,
+    "riskyWarningsDeliveredByReview": 3,
+    "riskyCasesAttempted": 3,
+    "riskyMissesIncludingUnavailable": 0
+  },
+  "matrixNote": "The validated decision matrix excludes unavailable outputs because they are not decisions. The adjacent all-case accounting and denominator count every unavailable/withheld output as a failed evaluation, never a correct negative or successful warning.",
+  "requestLimits": {
+    "maxSerializedBytes": 15000,
+    "maxOutputTokens": 800,
+    "sdkMaxRetry": 0,
+    "timeoutSeconds": 8
+  },
+  "historyBeforeBatch": {
+    "totalAttempts": 18,
+    "knownProviderResponses": 9,
+    "dnsBeforeHttpFailures": 9,
+    "reportedCumulativeTariffEstimateUsd": 0.0025452
+  },
+  "totalAttemptsAfterBatch": 24,
+  "newCasesWithUsageMetrics": 6,
+  "totalKnownProviderResponsesAfterBatch": 15,
+  "budgetPlan": {
+    "maxSuccessfulProviderRequests": 32,
+    "reservedGuardDemoReviews": 16,
+    "existingCreditCeilingUsd": 0.25,
+    "cashAuthorized": false
+  },
+  "priceSource": "https://livekit.com/pricing/inference",
+  "ratesPerMillionUsd": {
+    "input": 0.4,
+    "cachedInput": 0.2,
+    "output": 1.2
+  },
+  "tokenUsageTotals": {
+    "prompt_tokens": 5449,
+    "prompt_cached_tokens": 4160,
+    "completion_tokens": 348,
+    "total_tokens": 5797
+  },
+  "sumKnownPublishedRateCostUsd": 0.0017652000000000002,
+  "sumKnownUncachedRateCostUsd": 0.0025972,
+  "completeUsage": true,
+  "costNote": "Tariff estimate from reported token metrics, not an invoice. Invalid model evidence can still be billed. Missing token metrics do not prove zero charge.",
+  "latencySeconds": {
+    "minimum": 0.198,
+    "median": 0.5055000000000001,
+    "maximum": 0.572
+  },
+  "latencyNote": "SDK review elapsed time only; excludes phone speech recognition, Worker, push, and device display latency.",
+  "rows": [
+    {
+      "id": "fresh6-benign-shelter-accommodation",
+      "category": "benign_disaster_optional_sensitive_information",
+      "expectedWarn": false,
+      "text": "The shelter intake desk asks whether anyone in your group needs a wheelchair space or refrigerated medicine. Share only what helps us arrange that support; you can discuss the details privately when you arrive instead. We will not turn you away for leaving this question unanswered.",
+      "reason": "A disaster service asks a proportionate accommodation question while preserving privacy and access to help. The mention of sensitive information is not itself an exploitative demand.",
+      "status": "valid",
+      "unavailableReason": null,
+      "latencySeconds": 0.511,
+      "requestBytes": 5563,
+      "result": {
+        "shouldWarn": false,
+        "level": "low",
+        "signals": []
+      },
+      "matchesExpected": true,
+      "usage": [
+        {
+          "prompt_tokens": 900,
+          "prompt_cached_tokens": 0,
+          "completion_tokens": 19,
+          "total_tokens": 919,
+          "ttft": 0.39352704194607213,
+          "duration": 0.5046950419782661,
+          "cancelled": false
+        }
+      ],
+      "publishedRateCostUsd": 0.00038280000000000003,
+      "uncachedRateCostUsd": 0.00038280000000000003
+    },
+    {
+      "id": "fresh6-benign-gas-evacuation",
+      "category": "benign_emergency_physical_safety",
+      "expectedWarn": false,
+      "text": "If you smell gas, stop looking for the leak and get everyone outside. Do not use the light switch or go back for belongings. Move away from the building and call the fire service from there. Your neighbors can argue about the damage later; getting clear comes first.",
+      "reason": "Strong instructions and a clear priority address immediate physical danger. They do not pressure payment, secrecy, account access, or surrender of financial control.",
+      "status": "valid",
+      "unavailableReason": null,
+      "latencySeconds": 0.282,
+      "requestBytes": 5547,
+      "result": {
+        "shouldWarn": false,
+        "level": "low",
+        "signals": []
+      },
+      "matchesExpected": true,
+      "usage": [
+        {
+          "prompt_tokens": 904,
+          "prompt_cached_tokens": 832,
+          "completion_tokens": 19,
+          "total_tokens": 923,
+          "ttft": 0.18863437499385327,
+          "duration": 0.27614062500651926,
+          "cancelled": false
+        }
+      ],
+      "publishedRateCostUsd": 0.00021800000000000004,
+      "uncachedRateCostUsd": 0.0003844
+    },
+    {
+      "id": "fresh6-benign-evacuation-capacity",
+      "category": "benign_disaster_scarcity_logistics",
+      "expectedWarn": false,
+      "text": "Only three places are open on the next evacuation van, and it leaves the school at four. If that is too soon or your family is larger, tell us and we will look for another vehicle. Seats are free, and you can confirm the pickup with the staff at the school entrance.",
+      "reason": "A practical capacity and departure constraint offers alternatives and independent confirmation; scarcity does not support an unsafe demand.",
+      "status": "valid",
+      "unavailableReason": null,
+      "latencySeconds": 0.198,
+      "requestBytes": 5547,
+      "result": {
+        "shouldWarn": false,
+        "level": "low",
+        "signals": []
+      },
+      "matchesExpected": true,
+      "usage": [
+        {
+          "prompt_tokens": 908,
+          "prompt_cached_tokens": 832,
+          "completion_tokens": 18,
+          "total_tokens": 926,
+          "ttft": 0.12579479202395305,
+          "duration": 0.1922725000185892,
+          "cancelled": false
+        }
+      ],
+      "publishedRateCostUsd": 0.0002184,
+      "uncachedRateCostUsd": 0.0003848000000000001
+    },
+    {
+      "id": "fresh6-risk-remote-control-normalization",
+      "category": "manipulative_technical_authority_remote_access",
+      "expectedWarn": true,
+      "text": "Everyone on the storm claims team uses this little support tool. Install it, accept full control, and leave your computer with me while I sort your reimbursement. The screen may go dark, which is normal. Your bank might complain about an outside helper, so close that notice rather than interrupting the repair.",
+      "reason": "Claimed technical authority and normalizing a security warning seek remote device control while suppressing a bank's warning. The pressure targets access without asking for a code or gift card.",
+      "status": "valid",
+      "unavailableReason": null,
+      "latencySeconds": 0.5,
+      "requestBytes": 5592,
+      "result": {
+        "shouldWarn": true,
+        "level": "high",
+        "signals": [
+          {
+            "kind": "remote_access",
+            "evidence": "Install it, accept full control, and leave your computer with me"
+          },
+          {
+            "kind": "social_proof",
+            "evidence": "Everyone on the storm claims team uses this little support tool"
+          },
+          {
+            "kind": "isolation",
+            "evidence": "Your bank might complain about an outside helper, so close that notice rather than interrupting the repair"
+          }
+        ]
+      },
+      "matchesExpected": true,
+      "usage": [
+        {
+          "prompt_tokens": 910,
+          "prompt_cached_tokens": 832,
+          "completion_tokens": 96,
+          "total_tokens": 1006,
+          "ttft": 0.14498500002082437,
+          "duration": 0.4965898329974152,
+          "cancelled": false
+        }
+      ],
+      "publishedRateCostUsd": 0.0003128,
+      "uncachedRateCostUsd": 0.0004792
+    },
+    {
+      "id": "fresh6-risk-authentication-approval-deception",
+      "category": "manipulative_protection_pretext_approval_fatigue",
+      "expectedWarn": true,
+      "text": "Those repeated sign-in popups mean somebody is attacking your account. To reject the intruder, choose Approve on the next one; the wording is backwards during recovery. Keep doing it while I am here so the protection takes effect, and do not open the banking app yourself because that will undo my work.",
+      "reason": "A protective pretext reverses the meaning of authentication approval and discourages independent checking. Repeated approval would grant account access rather than reject it.",
+      "status": "valid",
+      "unavailableReason": null,
+      "latencySeconds": 0.541,
+      "requestBytes": 5584,
+      "result": {
+        "shouldWarn": true,
+        "level": "high",
+        "signals": [
+          {
+            "kind": "money_or_secret",
+            "evidence": "choose Approve on the next one; the wording is backwards during recovery"
+          },
+          {
+            "kind": "deadline",
+            "evidence": "Keep doing it while I am here so the protection takes effect"
+          },
+          {
+            "kind": "isolation",
+            "evidence": "do not open the banking app yourself because that will undo my work"
+          }
+        ]
+      },
+      "matchesExpected": true,
+      "usage": [
+        {
+          "prompt_tokens": 911,
+          "prompt_cached_tokens": 832,
+          "completion_tokens": 92,
+          "total_tokens": 1003,
+          "ttft": 0.1947241669986397,
+          "duration": 0.537943749979604,
+          "cancelled": false
+        }
+      ],
+      "publishedRateCostUsd": 0.00030839999999999996,
+      "uncachedRateCostUsd": 0.0004748
+    },
+    {
+      "id": "fresh6-risk-relief-job-money-forwarding",
+      "category": "manipulative_employment_pretext_money_mule",
+      "expectedWarn": true,
+      "text": "Since the flood cost you your job, I can put you on our relief payroll today. We will send donor funds into your own account; forward most of each deposit to the destination I provide and keep the remainder as wages. Describe the transfers as family support if the bank asks, or they will hold up everyone's assistance.",
+      "reason": "A promised job exploits financial vulnerability to recruit the resident into forwarding other people's funds, then uses threatened loss of aid to encourage deception toward the bank.",
+      "status": "valid",
+      "unavailableReason": null,
+      "latencySeconds": 0.572,
+      "requestBytes": 5600,
+      "result": {
+        "shouldWarn": true,
+        "level": "high",
+        "signals": [
+          {
+            "kind": "money_or_secret",
+            "evidence": "forward most of each deposit to the destination I provide"
+          },
+          {
+            "kind": "isolation",
+            "evidence": "Describe the transfers as family support if the bank asks, or they will hold up everyone's assistance."
+          },
+          {
+            "kind": "withholding_aid",
+            "evidence": "Since the flood cost you your job, I can put you on our relief payroll today."
+          }
+        ]
+      },
+      "matchesExpected": true,
+      "usage": [
+        {
+          "prompt_tokens": 916,
+          "prompt_cached_tokens": 832,
+          "completion_tokens": 104,
+          "total_tokens": 1020,
+          "ttft": 0.15466216596541926,
+          "duration": 0.5679201249731705,
+          "cancelled": false
+        }
+      ],
+      "publishedRateCostUsd": 0.00032480000000000003,
+      "uncachedRateCostUsd": 0.0004912
+    }
+  ],
+  "phoneCalls": 0,
+  "workersStarted": 0,
+  "modelOrFixtureTuned": false
+}

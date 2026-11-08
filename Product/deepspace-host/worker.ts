@@ -2,6 +2,7 @@ import { analyzeCall, analyzeScamText, orderedCases, parseTranscriptTurns, trans
 import { PharosStore } from './pharos-store'
 import { sendWarningSms } from './pharos-notify'
 import { sendPush, validatePushSubscription, type PushSubscription } from './pharos-push'
+import { createCallerContact, normalizeProviderPhone } from './pharos-callers'
 export { PharosStore } from './pharos-store'
 
 export const __DO_MANIFEST__ = [
@@ -227,6 +228,7 @@ async function handleVoiceIngest(request: Request, env: Env, ctx: ExecutionConte
   let warningUrl: string | undefined
   let warningTokenHash: string | undefined
   let callerRef: string | undefined
+  let callerContact: Awaited<ReturnType<typeof createCallerContact>> | undefined
   if (event === 'call.started') {
     await callStore(env, 'seed')
     const warningToken = toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `guard:${callId}`))
@@ -234,11 +236,14 @@ async function handleVoiceIngest(request: Request, env: Env, ctx: ExecutionConte
     warningUrl = new URL(`/guard.html#${warningToken}`, request.url).href
     // Only provider-observed intake SIP metadata can enable short-lived lookup.
     // The raw number is neither forwarded to storage nor returned to clients.
-    if (body.transport === 'sip' && body.purpose !== 'guard' && typeof body.callerNumber === 'string' && /^\+[1-9]\d{6,14}$/.test(body.callerNumber)) {
-      callerRef = toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `caller:${body.callerNumber}`))
+    const number = body.transport === 'sip' ? normalizeProviderPhone(body.purpose === 'guard' ? body.guardCallerNumber : body.callerNumber) : null
+    if (number) {
+      callerContact = await createCallerContact(env.PHAROS_SESSION_SECRET!, number, body.purpose === 'guard' ? 'risk' : 'help')
+      // Preserve legacy lookup so cases already received today still match.
+      if (body.purpose !== 'guard') callerRef = toBase64Url(await hmac(env.PHAROS_SESSION_SECRET!, `caller:${number}`))
     }
   }
-  const result = await callStore(env, 'voice.event', { callId, event, purpose: body.purpose, transport: body.transport, analysisMode: body.analysisMode, review: body.review, callerRef, consent: body.consent, role: body.role, text: body.text, sequence: body.sequence, deliveryFailed: body.deliveryFailed === true, warningTokenHash })
+  const result = await callStore(env, 'voice.event', { callId, event, purpose: body.purpose, transport: body.transport, analysisMode: body.analysisMode, review: body.review, callerRef, callerContact, consent: body.consent, role: body.role, text: body.text, sequence: body.sequence, deliveryFailed: body.deliveryFailed === true, warningTokenHash })
   if (result.warning) ctx.waitUntil(deliverWarning(env, result.warning as import('./pharos-domain').ResidentAlert))
   return responseJson({ ...result, ...(warningUrl ? { warningUrl } : {}) }, event === 'call.started' || event === 'turn' ? 202 : 200)
 }
@@ -276,6 +281,12 @@ export default {
 
     if (pathname === '/api/voice/ingest' && method === 'POST') {
       try { return await handleVoiceIngest(request, env, ctx) } catch (error) { return apiError(error, (error as { status?: number }).status || 400) }
+    }
+    const callProgressMatch = pathname.match(/^\/api\/voice\/calls\/([a-zA-Z0-9._:-]+)\/progress$/)
+    if (callProgressMatch && method === 'GET') {
+      const bearer = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || ''
+      if (!configuredResponderAuth(env) || !(await verifySecret(bearer, env.PHAROS_INGEST_TOKEN))) return responseJson({ error: 'Authorized voice service access is required.' }, 401)
+      try { return responseJson(await callStore(env, 'call.progress', { id: callProgressMatch[1] })) } catch (error) { return apiError(error, (error as { status?: number }).status || 400) }
     }
 
     if (pathname === '/api/guard/enrollment' && method === 'POST') {
@@ -402,6 +413,11 @@ export default {
       if (statusMatch && method === 'POST') {
         const body = await readBody(request)
         return responseJson(await callStore(env, 'case.status', { id: statusMatch[1], status: String(body.status || ''), syntheticOnly: !configuredResponderAuth(env) }))
+      }
+      const progressMatch = pathname.match(/^\/api\/cases\/([a-zA-Z0-9._:-]+)\/progress$/)
+      if (progressMatch && method === 'POST') {
+        const body = await readBody(request)
+        return responseJson(await callStore(env, 'case.progress', { id: progressMatch[1], state: body.state, etaMinutes: body.etaMinutes, expectedUpdatedAt: body.expectedUpdatedAt, syntheticOnly: !configuredResponderAuth(env) }))
       }
       if (pathname === '/api/responders' && method === 'POST') {
         const body = await readBody(request)

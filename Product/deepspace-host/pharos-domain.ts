@@ -79,6 +79,7 @@ export interface PharosCase {
   reassessmentRequired?: boolean
   linkedCallCount?: number
   history?: Array<{ id?: string; callId: string; at: string; kind: 'initial' | 'caller-update' | 'responder-review'; summary: string; previousPriority?: Priority; priority: Priority; reason: string; changedFields?: string[] }>
+  responseProgress?: { state: 'en-route' | 'arrived' | 'delayed' | 'unable' | 'review-needed'; responderId: string; etaAt: string | null; updatedAt: string }
 }
 
 export interface CallSession {
@@ -104,6 +105,8 @@ export interface CallSession {
   reviewStatus?: 'pending' | 'completed' | 'unavailable'
   reviewSequence?: number
   reviewIdentity?: string
+  /** Server-only encrypted callback contact; never returned to a client. */
+  callerContact?: { lookup: string; encryptedPhone: string }
 }
 
 export interface ResidentAlert {
@@ -119,7 +122,7 @@ export interface ResidentAlert {
   evidenceQuality?: string
   confidence?: string
   displayedAt?: string
-  analysisSource?: 'wording-rules' | 'context-model'
+  analysisSource?: 'wording-rules' | 'context-model' | 'caller-id-history'
 }
 
 export interface ScamReview {

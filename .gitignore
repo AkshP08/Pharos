@@ -8,6 +8,9 @@ Product/deepspace-host/public/app.js
 Product/deepspace-host/public/styles.css
 Product/deepspace-host/public/about.html
 
+# Original HackUTD challenge source files stay local; the project summary is in Product/.
+/Challenge Info/
+
 # Local development artifacts
 node_modules/
 .DS_Store

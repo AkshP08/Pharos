@@ -29,11 +29,11 @@ Open `index.html` in a modern browser. This first version is a static frontend a
 
 The current product is a static HTML/CSS/JavaScript demo, so it can be published without a backend. Photon is the messaging API, not the website host; its $100 organization credit is separate from hosting credits.
 
-The DeepSpace app is registered and its static-only host wrapper builds the current Product files into a deployable site. A production build completed on Nov 7, 2026. A private GitHub repository has been created under the team's student account, and the local project is connected to it. The first source commit and push are being prepared under the configured student Git identity.
+The static-only DeepSpace wrapper builds the current Product files into a deployable site. The app is live at [signalbridge-hackutd-2026.app.space](https://signalbridge-hackutd-2026.app.space). Source is in the private [SignalBridge GitHub repository](https://github.com/AkshP08/signalbridge-hackutd-2026), with commits and pushes under the student's account.
 
-The intended URL is `https://signalbridge-hackutd-2026.app.space` if the name remains available at deployment. The app is not live yet. The hosted page will contain fictional examples only; it will not connect to Photon, receive real calls or messages, or process emergency data. See [DeepSpace deployment](https://docs.deep.space/concepts/deployment) and [Lovable publishing overview](https://lovable.dev/guides/build-database-app-without-coding).
+The hosted page contains fictional examples only; it does not connect to Photon, receive real calls or messages, or process emergency data. See [DeepSpace deployment](https://docs.deep.space/concepts/deployment) and [Lovable publishing overview](https://lovable.dev/guides/build-database-app-without-coding).
 
-No public link has been created yet. Vercel's Drop page led to a Pro trial checkout with a card requirement; we closed it before starting the trial or uploading the project.
+We used DeepSpace for hosting. Vercel's Drop page led to a Pro trial checkout with a card requirement; we closed it before starting the trial or uploading the project.
 
 ## Files
 

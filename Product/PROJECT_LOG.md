@@ -168,3 +168,12 @@ Append a dated note after each meaningful implementation session. Include what c
 - Rebuilt successfully on Nov 7. Vite generated the site and worker. Wrangler continues to print a non-fatal permission error while attempting to create its debug-log folder under the user's Library; it does not stop the build. This remains a local environment warning, not an app runtime issue.
 - No public URL is live yet. The intended address is `https://signalbridge-hackutd-2026.app.space`, subject to availability and a successful DeepSpace deployment. The app still has no live Photon runtime, calls, messages, or real disaster data.
 - Screenshot checkpoint: the GitHub reauthentication step was shown in the browser and the account owner completed it. The saved project screenshot remains [Photon channel selection](screenshots/photon-channel-selection-2026-11-07-1646.png).
+
+## 2026-11-07 6:36 PM CST — Private GitHub repo pushed; first DeepSpace release live
+
+- Created the private GitHub repository `https://github.com/AkshP08/signalbridge-hackutd-2026`, added `origin`, created the initial commit `a474e61`, and pushed `main`. The commit author is the student's configured Git identity; no AI contributor or co-author was added. The challenge source folder is excluded.
+- The first DeepSpace deployment succeeded and edge serving was confirmed at `https://signalbridge-hackutd-2026.app.space`. Its JSON result identified GitHub as the source repository and reported `dirty: true`, so this first release does not record a commit. The untracked challenge slides caused the dirty-tree state even though they were not part of the hosted Product directory.
+- Added `/Challenge Info/` to `.gitignore` so the participant-provided source slides stay local and stop making the project checkout appear dirty. Updated the README with the live demo and private repository links.
+- Next: commit and push this cleanup, then redeploy from the clean committed tree so the live release is traceable to a GitHub revision. The actual deployed content remains synthetic-only; no Photon live runtime or real emergency data is involved.
+- Wrangler's non-fatal local debug-log permission warning remains during build. The app itself was deployed and confirmed serving despite that warning.
+- Screenshot checkpoint: the live site URL and release result were confirmed in the DeepSpace CLI. The saved onboarding screenshot is [Photon channel selection](screenshots/photon-channel-selection-2026-11-07-1646.png); capture a browser screenshot of the public demo after the clean redeploy.

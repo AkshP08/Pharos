@@ -1,6 +1,6 @@
 # Local QA watcher
 
-This is a prepared local runner. It has not been installed as a service or left running. The root agent/operator owns launching it after the current manual integration checks finish. Add `Product/.qa-watch/` to the repository's `.gitignore` before launching; this change is intentionally left to root.
+The root agent launched this local runner at the November 8 checkpoint; its backend, voice, and UI lanes are active on relevant source changes. `Product/.qa-watch/` is ignored by Git. It is not installed as a persistent operating-system service: use `--status` to check current liveness and source fingerprints, and relaunch it if its owning session has ended. The root agent/operator owns its lifecycle and any manual build/deployment pauses.
 
 Run these commands from any directory by using an absolute path, or from the repository root as shown:
 

@@ -1,50 +1,43 @@
 # Pharos
 
-**Flare** is a resident phone hotline. **Beacon** is a responder website that organizes reported disaster needs by service area, changing urgency, and accountable ownership. Pressure Trace reviews suspicious wording separately so a scam warning never blocks a help request. Residents do not complete a website intake form.
+**Flare** is a resident phone hotline. **Beacon** is the responder website: it ranks changing reports by explainable urgency and service area, keeps accountable owners, and records human response updates. Residents do not fill out a help form or give a name. A separate protected-call mode reviews caller words for psychological pressure and can warn a paired resident phone.
 
-The local Worker, persistent SQLite store, voice runtime, and optional warning PWA are implemented. The current revision awaits production deployment; **actual Photon calls, live speech recognition, and a phone notification banner are not yet verified**. The initial Devpost entry exists; final submission is November 8, 2026 at noon CST.
+**Start with [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md).** It covers the two test phones, readiness checks, four manual calls, recipient setup, and a three-minute demonstration.
 
-## Try the local demonstration
+## Verified status
 
-[The existing public demo](https://signalbridge-hackutd-2026.app.space) may lag this revision. Open `index.html` for a static preview, or build/run the Worker in `deepspace-host` for interactive behavior. Direct file access cannot call the backend.
+The [DeepSpace app](https://signalbridge-hackutd-2026.app.space) is deployed. Hosted health, authentication protection, and recipient assets were checked. One real consenting fictional Photon call reached LiveKit speech recognition and persisted a three-person case with 16 turns and no transcript-delivery failure. This is real phone-integration evidence; it is not a claim of operational emergency dispatch.
 
-Beacon's synthetic-call workbench processes fictional transcripts through the server rules, persists the call/case, and shows the matched area, urgency reason, eligible responders, and wording evidence. Refresh to check persistence. Synthetic reset preserves non-synthetic records. Demo-only mode exposes only synthetic records; protected live intake requires server secrets.
+The last completed QA checkpoint reported passing lanes: **152 backend checks, 76 offline voice checks, and 35 Guard/Beacon UI contracts**. A root-owned file-change watcher is active; [QA_WATCH.md](QA_WATCH.md) explains its status and pause controls. These checks do not prove a phone banner, microphone performance, or a real-world fraud-detection accuracy rate.
 
-## What is implemented
+**Hosted voice startup: RUNNING; audio acceptance: OPEN.** A synthetic WebRTC test reached speech recognition, persisted an urgent three-person shelter case, and completed disconnect/room cleanup. The overall test failed because a later generic library remark replaced the precise location and lost area routing; that regression is being fixed and must be rechecked. This test is not a new Photon call. The old local worker is stopped; confirm the current version and active mode before manual calls. The shorter phone opening, live responder announcement, real worsening callback, two-party relay, and actual Phone B banner still need their current-build manual checks.
 
-- **Cases change during calls.** Ordered consented turns update partial cases before hang-up. Unknown safety/location remains visible; incomplete transcript delivery requests follow-up.
-- **Conservative return-call retrieval.** Actual SIP intake metadata supplies a short-lived keyed number lookup, not caller identity. Updating an earlier open request additionally requires explicit same-situation intent, a substantial current-location match, and one eligible recent ended-call case. Ambiguity creates a separate case. The latest report, timestamped history, and reassessment state preserve evolving conditions without requiring a name. Repeat-case regressions pass in the local suite.
-- **Human-owned coordination.** Area/capability/approval/availability/capacity determine claim eligibility. Unknown locations can have follow-up owners. Responders can resolve/reopen cases and record priority changes with reasons. Changed coverage flags assignment review; new danger prompts reassessment.
-- **Content-grounded warnings.** Exact transcript spans explain psychological pressure such as authority, artificial deadlines, threats, isolation, and risky payment/code requests. Urgency alone is not fraud. No numeric fraud probability or identity claim is made.
-- **Pre-enrolled recipient warnings.** A protected responder can pair a consenting test recipient before a guard call using a private 24-hour link. `guard.html` supports foreground warnings and permission-based Web Push. SMS is an optional disabled adapter. Availability, provider acceptance, and device-reported display are distinct states; actual phone delivery remains untested.
-- **Consent and retention.** No raw audio enters the Worker. Transcript storage starts after clear consent; withdrawal stops collection and scrubs evidence/access/linkage. Scheduled expiry removes transcript/evidence and private access within at most 24 hours; minimal structured help facts may remain.
+## What the app does
 
-Most recent completed local verification: **93 Worker/client/domain/notification tests and 22 voice-runtime tests passed**. These use fictional inputs and local/mocked services, not real phone calls. See [the system plan](SYSTEM_PLAN.md) for the current integration gates and limitations.
+- **Updates during and between calls.** Consented partial turns reach the desk before hangup. Conservative returning-call linkage requires the same-situation report, a substantial current-location match, and one eligible recent open case. The latest report replaces current facts while history and ownership remain visible.
+- **Routes by urgency and area.** Explicit danger, time-sensitive needs, and missing facts produce explained suggestions. Unknown location stays visible, including immediate cases. Approved capability, coverage, availability, and capacity determine assignment eligibility.
+- **Keeps humans accountable.** The desk can claim, own follow-up, review priority with a reason, resolve/reopen, and report travel, delay, arrival, or inability to attend. An ETA is supplied by the desk; new danger or changed coverage can invalidate it. A claim alone does not mean help was dispatched.
+- **Reviews manipulation in context.** Guard mode uses bounded model review of consented caller text. Exact evidence and psychological labels explain the warning; invalid, stale, or unavailable output is withheld and explicitly unverified. Tone, accent, and caller identity are not model inputs.
+- **Remembers contacts cautiously.** Phone contacts are encrypted at rest with purpose-separated keyed lookups and at most 24-hour retention. Three distinct prior flagged guard calls can produce a caller-ID-history caution. That does not prove identity, block help, or replace current speech analysis.
+- **Warns a paired phone.** A private 24-hour link pairs the optional warning PWA before a guard call. Foreground display and permission-based Web Push are implemented. Actual notification delivery during a two-phone call remains unverified; provider acceptance, device-reported display, and human reading are separate facts. SMS is disabled.
 
-## Phone architecture
+## Runtime and limits
 
 ```text
-Photon number → SIP → LiveKit STT / consented intake
-  → protected ordered text events → Worker + persistent SQLite
-  → changing case / separate pressure warning → Beacon / enrolled recipient
+Help mode: Phone A → Photon → LiveKit intake/STT → protected Worker → SQLite case → Beacon
+Guard mode: Phone A → Photon/LiveKit → Phone B; caller transcript → context review → paired PWA
 ```
 
-The owner provisioned one Photon US number using **$2 existing credit**; the wallet is $98 and **$3 remains of the authorized $5 test budget, with $0 out of pocket**. The default SIP profile, one LiveKit inbound trunk, and intake dispatch rule exist. The owner must finish saving the prepared Photon TLS destination with the generated SIP authentication, and fill the consenting caller allowlist. Eleven selected server secrets were uploaded with merge semantics and apply at deployment. SMS activation/10DLC is pending; no SMS, paid-plan, or campaign upgrade is enabled. Follow [PHOTON_SETUP.md](PHOTON_SETUP.md) and [voice-agent/README.md](voice-agent/README.md); set route-ready only after real end-to-end testing.
+The single Photon number serves these test modes **sequentially**. The operator changes the runtime/dispatch deliberately between demonstrations. Pharos cannot screen arbitrary cellular calls to a personal number. Spoken location is matched to configured prototype areas; it is not GPS or flood sensing.
 
-Guard mode is a separate, explicitly enabled two-leg call to a fixed consenting test phone. Calls must reach the configured Photon number; Pharos cannot inspect arbitrary calls to a personal number. The optional resident PWA provides warnings and notification setup, not help intake. A telephone call supplies no reliable GPS; location comes from the caller's current report.
+The approved spending boundary is **$5 existing Photon credit, no cash, one number, no paid-plan or SMS campaign upgrade**. The number used $2; test-call usage consumes the remainder and must be reconciled. LiveKit model checks have a separate **$0.25 existing-credit cap**. See [PHOTON_SETUP.md](PHOTON_SETUP.md) for observed rates and account state.
 
-## Boundaries and sponsor scope
+The Worker stores no raw audio. Transcript sharing starts after clear consent, withdrawal stops collection and scrubs relevant evidence/access/contact history, and scheduled retention is at most 24 hours. Minimal structured request facts may remain. Provider processing and recipient-device copies have separate limits.
 
-Urgency rules are not validated emergency triage or dispatch. Response zones/responders are fictional; shared demo passwords do not verify individuals or enforce per-responder area access. A human owns every real-world action. Pharos re-triages as reports arrive; it does not continuously sense rising water or guarantee assistance.
+## Build, evidence, and submission
 
-Core targets are State Farm, T-Mobile Safe Signal, Photon, and General/Beginner. Team-created synthetic scam scenarios are permitted by the supplied T-Mobile slide. MongoDB Atlas and Tiger Data are future options, not integrated services or claimed tracks. The LiveKit model choice is not a Gemini API integration.
+Use [deepspace-host/README.md](deepspace-host/README.md) for builds, deployment, private server configuration, and API routes; [voice-agent/README.md](voice-agent/README.md) for runtime setup. The build generates a public `build.json` source stamp: after publishing, verify its commit and `dirty:false` against the intended Git revision. The deployment service's GitHub-source metadata does not itself provide reliable commit lineage.
 
-## Project map
+[PROJECT_LOG.md](PROJECT_LOG.md) records failures, fixes, tests, and plan changes. [DELIVERY_CHECKLIST.md](DELIVERY_CHECKLIST.md) tracks remaining acceptance gates, and [JUDGE_FEEDBACK.md](JUDGE_FEEDBACK.md) links judge recommendations to owners and verification. The canonical repository is [AkshP08/Pharos](https://github.com/AkshP08/Pharos).
 
-- `index.html`, `styles.css`, `app.js` — Beacon, synthetic workbench, Pressure Trace, animated local Guide.
-- `guard.html`, `guard.js`, `guard-worker.js`, `guard.webmanifest` — private recipient warning PWA and notification handling.
-- `deepspace-host/worker.ts`, `pharos-store.ts` — authenticated APIs, SQLite persistence, warnings, retention, audit.
-- `deepspace-host/pharos-domain.ts`, `pharos-facts.ts`, `pharos-pressure.ts` — facts, routing, urgency, pressure evidence.
-- `deepspace-host/pharos-push.ts`, `pharos-notify.ts` — Web Push and optional Photon SMS adapter.
-- `voice-agent/agent.py`, `pharos_runtime.py` — LiveKit intake/guard, consent, ordered delivery, cleanup.
-- [SYSTEM_PLAN.md](SYSTEM_PLAN.md), [PHOTON_SETUP.md](PHOTON_SETUP.md), [PROJECT_LOG.md](PROJECT_LOG.md) — plan, account gates, and ongoing implementation evidence.
+State Farm, T-Mobile Safe Signal, Photon, and General/Beginner are the intended targets. The supplied T-Mobile slide permits team-created synthetic scenarios. MongoDB Atlas, Tiger Data, Gemini API, Solana, and Vultr are not integrated or claimed. Urgency suggestions are prototype rules, profiles/areas are demonstration data, and shared passwords are not verified responder identities. Final submission is November 8, 2026 at noon CST; the initial Devpost entry exists.
